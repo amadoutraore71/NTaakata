@@ -1,23 +1,122 @@
+import { useEffect, useState } from "react";
 import {
-    SafeAreaView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  SafeAreaView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import LogoutButton from "../../components/LogoutButton";
 
 import { router } from "expo-router";
 
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
+
+import { db } from "../../../firebase/config";
+import { getUser } from "../../storage/userStorage";
+
 export default function DriverDashboard() {
+  const [subscriptionActive, setSubscriptionActive] =
+    useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  useEffect(() => {
+    loadDriver();
+  }, []);
+
+  const loadDriver = async () => {
+    try {
+      const user = await getUser();
+
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const q = query(
+        collection(db, "users"),
+        where("phone", "==", user.phone)
+      );
+
+      const querySnapshot =
+        await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const driver =
+          querySnapshot.docs[0].data();
+
+        setSubscriptionActive(
+          driver.subscriptionActive || false
+        );
+
+        console.log(
+          "subscriptionActive =",
+          driver.subscriptionActive
+        );
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.log(error);
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.loading}>
+          Chargement...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
+      
+      <View style={styles.header}>
+        <Text style={styles.title}>
+          Tableau de bord
+        </Text>
+        <LogoutButton />
+      </View>
+      {!subscriptionActive && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningText}>
+            🔒 Votre abonnement conducteur
+            n'est pas actif.
+          </Text>
 
-      <Text style={styles.title}>
-        Tableau de bord
-      </Text>
+          <Text style={styles.warningSubText}>
+            Activez votre abonnement
+            journalier de 100 FCFA pour
+            recevoir des demandes de courses.
+          </Text>
 
-      {/* Statut */}
+          <TouchableOpacity
+            style={styles.activateButton}
+            onPress={() =>
+              router.push(
+                "/(driver)/subscription"
+              )
+            }
+          >
+            <Text style={styles.activateText}>
+              Activer maintenant
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.statusCard}>
         <Text style={styles.statusTitle}>
           Statut Chauffeur
@@ -32,7 +131,6 @@ export default function DriverDashboard() {
         </View>
       </View>
 
-      {/* Revenus */}
       <View style={styles.card}>
         <Text style={styles.label}>
           Revenus aujourd'hui
@@ -43,7 +141,6 @@ export default function DriverDashboard() {
         </Text>
       </View>
 
-      {/* Courses */}
       <View style={styles.card}>
         <Text style={styles.label}>
           Courses effectuées
@@ -54,12 +151,20 @@ export default function DriverDashboard() {
         </Text>
       </View>
 
-      {/* Actions */}
       <TouchableOpacity
         style={styles.button}
-        onPress={() =>
-          router.push("/(driver)/requests")
-        }
+        onPress={() => {
+          if (!subscriptionActive) {
+            router.push(
+              "/(driver)/subscription"
+            );
+            return;
+          }
+
+          router.push(
+            "/(driver)/requests"
+          );
+        }}
       >
         <Text style={styles.buttonText}>
           Voir les demandes
@@ -69,14 +174,15 @@ export default function DriverDashboard() {
       <TouchableOpacity
         style={styles.secondaryButton}
         onPress={() =>
-          router.push("/(driver)/earnings")
+          router.push(
+            "/(driver)/earnings"
+          )
         }
       >
         <Text style={styles.secondaryText}>
           Mes revenus
         </Text>
       </TouchableOpacity>
-
     </SafeAreaView>
   );
 }
@@ -86,6 +192,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFF",
     padding: 20,
+    marginTop: 100
+  },
+
+  loading: {
+    fontSize: 18,
+    textAlign: "center",
+    marginTop: 50,
   },
 
   title: {
@@ -93,6 +206,41 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#0B6E4F",
     marginBottom: 25,
+  },
+
+  warningCard: {
+    backgroundColor: "#FFF3CD",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#FFE69C",
+  },
+
+  warningText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#856404",
+    marginBottom: 8,
+  },
+
+  warningSubText: {
+    color: "#856404",
+    marginBottom: 15,
+    lineHeight: 20,
+  },
+
+  activateButton: {
+    backgroundColor: "#F4C300",
+    height: 45,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  activateText: {
+    fontWeight: "bold",
+    fontSize: 15,
   },
 
   statusCard: {
@@ -164,4 +312,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+  header: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+},
 });

@@ -1,184 +1,239 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+
 import {
-  ActivityIndicator,
+  Alert,
+  SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
-import * as Location from "expo-location";
-import { router } from "expo-router";
-import MapView, { Marker } from "react-native-maps";
+import {
+  addDoc,
+  collection,
+} from "firebase/firestore";
 
-export default function Home() {
-  const mapRef = useRef(null);
+import { db } from "../../../firebase/config";
 
-  const [location, setLocation] = useState(null);
-  const [loading, setLoading] = useState(true);
+import LogoutButton from "../../components/LogoutButton";
+import { getUser } from "../../storage/userStorage";
 
-  useEffect(() => {
-    getCurrentLocation();
-  }, []);
+export default function PassengerHome() {
+  const [pickup, setPickup] = useState("");
+  const [destination, setDestination] =
+    useState("");
 
-  const getCurrentLocation = async () => {
+  const [loading, setLoading] =
+    useState(false);
+
+  const handleRideRequest = async () => {
     try {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
-
-      if (status !== "granted") {
-        alert("Permission GPS refusée");
+      if (!pickup.trim()) {
+        Alert.alert(
+          "Erreur",
+          "Veuillez saisir le point de départ"
+        );
         return;
       }
 
-      const currentLocation =
-        await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
+      if (!destination.trim()) {
+        Alert.alert(
+          "Erreur",
+          "Veuillez saisir la destination"
+        );
+        return;
+      }
 
-      setLocation(currentLocation.coords);
+      setLoading(true);
+
+      const user = await getUser();
+
+      if (!user) {
+        Alert.alert(
+          "Erreur",
+          "Utilisateur introuvable"
+        );
+        setLoading(false);
+        return;
+      }
+
+      await addDoc(
+        collection(db, "rides"),
+        {
+          pickup,
+          destination,
+
+          passengerPhone:
+            user.phone,
+
+          price: 1500,
+
+          status: "pending",
+
+          createdAt:
+            new Date().toISOString(),
+        }
+      );
+
+      Alert.alert(
+        "Succès",
+        "Votre demande de course a été envoyée."
+      );
+
+      setPickup("");
+      setDestination("");
 
       setLoading(false);
-
-      mapRef.current?.animateToRegion({
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
     } catch (error) {
       console.log(error);
+
       setLoading(false);
+
+      Alert.alert(
+        "Erreur",
+        "Impossible d'envoyer la demande."
+      );
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" />
-        <Text>Chargement du GPS...</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-      >
-        {location && (
-          <Marker
-            coordinate={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-            }}
-            title="Ma position"
-          />
-        )}
-      </MapView>
-
-      <View style={styles.bottomCard}>
-        <Text style={styles.hello}>
-          Bonjour 👋
-        </Text>
-
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
         <Text style={styles.title}>
-          Où allez-vous ?
+          Commander une course
         </Text>
 
+        <LogoutButton />
+      </View>
+
+      {/* Formulaire */}
+      <View style={styles.card}>
+        <Text style={styles.label}>
+          📍 Point de départ
+        </Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Ex : Sogoniko"
+          value={pickup}
+          onChangeText={setPickup}
+        />
+
+        <Text style={styles.label}>
+          🎯 Destination
+        </Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Ex : Kalaban Coura"
+          value={destination}
+          onChangeText={setDestination}
+        />
+
+        {/* Prix estimé */}
+        <View style={styles.priceCard}>
+          <Text style={styles.priceLabel}>
+            Prix estimé
+          </Text>
+
+          <Text style={styles.price}>
+            1500 FCFA
+          </Text>
+        </View>
+
+        {/* Bouton */}
         <TouchableOpacity
-          style={styles.destinationButton}
-          onPress={() =>
-            router.push("/(passenger)/search-ride")
-          }
+          style={styles.button}
+          onPress={handleRideRequest}
+          disabled={loading}
         >
-          <Text style={styles.destinationText}>
-            📍 Entrer votre destination
+          <Text style={styles.buttonText}>
+            {loading
+              ? "Envoi..."
+              : "Commander"}
           </Text>
         </TouchableOpacity>
-
-        <View style={styles.transportContainer}>
-          <TouchableOpacity style={styles.transportCard}>
-            <Text style={styles.icon}>🏍️</Text>
-            <Text>Moto</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.transportCard}>
-            <Text style={styles.icon}>🚗</Text>
-            <Text>Voiture</Text>
-          </TouchableOpacity>
-        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-
-  map: {
-    flex: 1,
-  },
-
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  bottomCard: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
     backgroundColor: "#FFFFFF",
     padding: 20,
-    borderTopLeftRadius: 25,
-    borderTopRightRadius: 25,
   },
 
-  hello: {
-    color: "#666",
-    fontSize: 15,
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 25,
   },
 
   title: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#0B6E4F",
-    marginTop: 5,
   },
 
-  destinationButton: {
-    backgroundColor: "#F5F5F5",
-    padding: 18,
+  card: {
+    backgroundColor: "#F8F8F8",
+    borderRadius: 15,
+    padding: 20,
+  },
+
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+    marginTop: 10,
+  },
+
+  input: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
     borderRadius: 12,
+    height: 55,
+    paddingHorizontal: 15,
+  },
+
+  priceCard: {
+    backgroundColor: "#FFF3CD",
+    borderRadius: 12,
+    padding: 15,
     marginTop: 20,
   },
 
-  destinationText: {
+  priceLabel: {
     color: "#666",
-    fontSize: 16,
+    fontSize: 14,
   },
 
-  transportContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 25,
+  price: {
+    marginTop: 5,
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#0B6E4F",
   },
 
-  transportCard: {
-    width: "48%",
-    backgroundColor: "#F8F8F8",
-    padding: 20,
-    borderRadius: 15,
+  button: {
+    backgroundColor: "#F4C300",
+    height: 55,
+    borderRadius: 12,
+    justifyContent: "center",
     alignItems: "center",
+    marginTop: 20,
   },
 
-  icon: {
-    fontSize: 32,
-    marginBottom: 8,
+  buttonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
   },
 });

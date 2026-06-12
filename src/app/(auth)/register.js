@@ -17,12 +17,13 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
-const { role } = useLocalSearchParams();
+ 
 
 export default function Register() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const { role } = useLocalSearchParams();
+  console.log("ROLE REGISTER =", role);
 
   const handleRegister = () => {
     if (!fullName.trim()) {

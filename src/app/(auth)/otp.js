@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
+import { saveUser } from "../../storage/userStorage";
 
 export default function Otp() {
  const {
@@ -65,23 +66,45 @@ export default function Otp() {
     }
 
     try {
-      const userId = Date.now().toString();
+    const userId = Date.now().toString();
 
-      await setDoc(
-        doc(db, "users", userId),
-        {
-          name: fullName,
-          phone: phone,
-          role: role,
-          createdAt:
-            new Date().toISOString(),
-        }
-      );
+      console.log("FULLNAME =", fullName);
+      console.log("PHONE =", phone);
+      console.log("ROLE =", role);
 
-      Alert.alert(
-        "Succès",
-        "Compte créé avec succès"
-      );
+await setDoc(
+  doc(db, "users", userId),
+  {
+    name: fullName,
+    phone: phone,
+    role: role,
+
+    subscriptionActive:
+      role === "driver"
+        ? false
+        : true,
+
+    dailyFee:
+      role === "driver"
+        ? 100
+        : 0,
+
+    createdAt:
+      new Date().toISOString(),
+  }
+);
+
+ 
+await saveUser({
+  userId,
+  phone,
+  role,
+});
+
+Alert.alert(
+  "Succès",
+  "Compte créé avec succès"
+);
 
     if (role === "passenger") {
   router.replace("/(passenger)/home");

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import {
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import MapView, {
-    Marker,
+  Marker,
 } from "react-native-maps";
 
 export default function DriverNavigation() {
