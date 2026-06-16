@@ -1,169 +1,257 @@
-import { useState } from "react";
 import {
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-const ridesData = [
-  {
-    id: "1",
-    passenger: "Amadou Traoré",
-    driver: "Moussa Traoré",
-    amount: "1500 FCFA",
-    status: "Terminée",
-    date: "06/06/2026",
-  },
-  {
-    id: "2",
-    passenger: "Mariam Coulibaly",
-    driver: "Amadou Diallo",
-    amount: "2500 FCFA",
-    status: "En cours",
-    date: "06/06/2026",
-  },
-  {
-    id: "3",
-    passenger: "Oumar Koné",
-    driver: "Boubacar Keita",
-    amount: "2000 FCFA",
-    status: "Annulée",
-    date: "05/06/2026",
-  },
-];
+import { router } from "expo-router";
 
-export default function AdminRides() {
-  const [search, setSearch] = useState("");
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
-  const filteredRides = ridesData.filter(
-    (ride) =>
-      ride.passenger
-        .toLowerCase()
-        .includes(search.toLowerCase()) ||
-      ride.driver
-        .toLowerCase()
-        .includes(search.toLowerCase())
-  );
+import { db } from "../../../firebase/config";
 
-  const renderRide = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.passenger}>
-        👤 {item.passenger}
-      </Text>
+export default function AdminDashboard() {
+  const [users, setUsers] =
+    useState(0);
 
-      <Text style={styles.info}>
-        🚗 Chauffeur : {item.driver}
-      </Text>
+  const [drivers, setDrivers] =
+    useState(0);
 
-      <Text style={styles.info}>
-        📅 {item.date}
-      </Text>
+  const [rides, setRides] =
+    useState(0);
 
-      <Text style={styles.amount}>
-        💰 {item.amount}
-      </Text>
+  const [subscriptions,
+    setSubscriptions] =
+    useState(0);
 
-      <Text
-        style={[
-          styles.status,
-          item.status === "Terminée"
-            ? styles.completed
-            : item.status === "En cours"
-            ? styles.pending
-            : styles.cancelled,
-        ]}
-      >
-        {item.status}
-      </Text>
-    </View>
-  );
+  useEffect(() => {
+    loadStatistics();
+  }, []);
+
+  const loadStatistics =
+    async () => {
+      try {
+        const usersSnapshot =
+          await getDocs(
+            collection(
+              db,
+              "users"
+            )
+          );
+
+        let totalUsers = 0;
+        let totalDrivers = 0;
+        let activeSubscriptions =
+          0;
+
+        usersSnapshot.forEach(
+          (document) => {
+            const user =
+              document.data();
+
+            totalUsers++;
+
+            if (
+              user.role ===
+              "driver"
+            ) {
+              totalDrivers++;
+            }
+
+            if (
+              user.subscriptionActive
+            ) {
+              activeSubscriptions++;
+            }
+          }
+        );
+
+        const ridesSnapshot =
+          await getDocs(
+            collection(
+              db,
+              "rides"
+            )
+          );
+
+        setUsers(totalUsers);
+        setDrivers(totalDrivers);
+        setSubscriptions(
+          activeSubscriptions
+        );
+        setRides(
+          ridesSnapshot.size
+        );
+      } catch (error) {
+        console.log(error);
+      }
+    };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>
-        Gestion des Courses
-      </Text>
+    <SafeAreaView
+      style={styles.container}
+    >
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        <Text style={styles.title}>
+          Tableau de bord Admin
+        </Text>
 
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Rechercher passager ou chauffeur..."
-        value={search}
-        onChangeText={setSearch}
-      />
+        <View style={styles.card}>
+          <Text style={styles.label}>
+            👥 Utilisateurs
+          </Text>
 
-      <FlatList
-        data={filteredRides}
-        keyExtractor={(item) => item.id}
-        renderItem={renderRide}
-        showsVerticalScrollIndicator={false}
-      />
+          <Text style={styles.value}>
+            {users}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>
+            🚕 Conducteurs
+          </Text>
+
+          <Text style={styles.value}>
+            {drivers}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>
+            📍 Courses
+          </Text>
+
+          <Text style={styles.value}>
+            {rides}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>
+            💰 Abonnements actifs
+          </Text>
+
+          <Text style={styles.value}>
+            {subscriptions}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() =>
+            router.push(
+              "/(admin)/users"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
+            Voir les utilisateurs
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={
+            styles.secondaryButton
+          }
+          onPress={() =>
+            router.push(
+              "/(admin)/rides"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
+            Voir les courses
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginBottom: 20,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginBottom: 25,
+    },
 
-  searchInput: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-  },
+    card: {
+      backgroundColor:
+        "#F8F8F8",
+      borderRadius: 15,
+      padding: 20,
+      marginBottom: 15,
+    },
 
-  card: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
-  },
+    label: {
+      color: "#666",
+      marginBottom: 10,
+    },
 
-  passenger: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
+    value: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+    },
 
-  info: {
-    color: "#555",
-    marginBottom: 5,
-  },
+    button: {
+      backgroundColor:
+        "#0B6E4F",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems: "center",
+      marginTop: 20,
+    },
 
-  amount: {
-    color: "#0B6E4F",
-    fontWeight: "bold",
-    fontSize: 18,
-    marginTop: 10,
-  },
+    secondaryButton: {
+      backgroundColor:
+        "#F4C300",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems: "center",
+      marginTop: 15,
+    },
 
-  status: {
-    marginTop: 10,
-    fontWeight: "bold",
-  },
-
-  completed: {
-    color: "green",
-  },
-
-  pending: {
-    color: "#F4C300",
-  },
-
-  cancelled: {
-    color: "#E53935",
-  },
-});
+    buttonText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "bold",
+    },
+  });

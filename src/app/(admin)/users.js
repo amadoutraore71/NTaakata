@@ -1,182 +1,143 @@
-import { useState } from "react";
 import {
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
-const usersData = [
-  {
-    id: "1",
-    name: "Amadou Traoré",
-    phone: "+22370000000",
-    status: "Actif",
-  },
-  {
-    id: "2",
-    name: "Mariam Coulibaly",
-    phone: "+22376000000",
-    status: "Actif",
-  },
-  {
-    id: "3",
-    name: "Moussa Diallo",
-    phone: "+22366000000",
-    status: "Suspendu",
-  },
-];
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
+
+import { db } from "../../../firebase/config";
 
 export default function Users() {
-  const [search, setSearch] = useState("");
+  const [users, setUsers] =
+    useState([]);
 
-  const filteredUsers = usersData.filter((user) =>
-    user.name.toLowerCase().includes(
-      search.toLowerCase()
-    )
-  );
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
-  const renderUser = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.name}>
-        {item.name}
-      </Text>
+  const loadUsers = async () => {
+    try {
+      const querySnapshot =
+        await getDocs(
+          collection(db, "users")
+        );
 
-      <Text style={styles.phone}>
-        {item.phone}
-      </Text>
+      const usersList = [];
 
-      <Text
-        style={[
-          styles.status,
-          {
-            color:
-              item.status === "Actif"
-                ? "green"
-                : "red",
-          },
-        ]}
-      >
-        {item.status}
-      </Text>
+      querySnapshot.forEach(
+        (document) => {
+          usersList.push({
+            id: document.id,
+            ...document.data(),
+          });
+        }
+      );
 
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.suspendButton}
-        >
-          <Text style={styles.buttonText}>
-            Suspendre
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.deleteButton}
-        >
-          <Text style={styles.buttonText}>
-            Supprimer
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+      setUsers(usersList);
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-
       <Text style={styles.title}>
-        Gestion des utilisateurs
+        Utilisateurs
       </Text>
 
-      <TextInput
-        style={styles.search}
-        placeholder="Rechercher un utilisateur"
-        value={search}
-        onChangeText={setSearch}
-      />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+      >
+        {users.length === 0 ? (
+          <Text style={styles.empty}>
+            Aucun utilisateur
+          </Text>
+        ) : (
+          users.map((user) => (
+            <View
+              key={user.id}
+              style={styles.card}
+            >
+              <Text style={styles.name}>
+                👤 {user.name}
+              </Text>
 
-      <FlatList
-        data={filteredUsers}
-        keyExtractor={(item) => item.id}
-        renderItem={renderUser}
-      />
+              <Text style={styles.info}>
+                📞 {user.phone}
+              </Text>
 
+              <Text style={styles.info}>
+                🎭 {user.role}
+              </Text>
+
+              {user.role ===
+                "driver" && (
+                <Text
+                  style={styles.info}
+                >
+                  💰 Abonnement :
+                  {" "}
+                  {user.subscriptionActive
+                    ? "Actif"
+                    : "Inactif"}
+                </Text>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginBottom: 20,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginBottom: 20,
+    },
 
-  search: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    marginBottom: 20,
-  },
+    empty: {
+      textAlign: "center",
+      marginTop: 50,
+      color: "#666",
+    },
 
-  card: {
-    backgroundColor: "#F8F8F8",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
-  },
+    card: {
+      backgroundColor: "#F8F8F8",
+      borderRadius: 15,
+      padding: 15,
+      marginBottom: 15,
+    },
 
-  name: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
+    name: {
+      fontSize: 18,
+      fontWeight: "bold",
+      marginBottom: 10,
+    },
 
-  phone: {
-    color: "#666",
-    marginTop: 5,
-  },
-
-  status: {
-    marginTop: 8,
-    fontWeight: "bold",
-  },
-
-  actions: {
-    flexDirection: "row",
-    marginTop: 15,
-  },
-
-  suspendButton: {
-    flex: 1,
-    backgroundColor: "#F4C300",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginRight: 5,
-  },
-
-  deleteButton: {
-    flex: 1,
-    backgroundColor: "#E53935",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginLeft: 5,
-  },
-
-  buttonText: {
-    color: "#FFF",
-    fontWeight: "bold",
-  },
-});
+    info: {
+      color: "#555",
+      marginBottom: 5,
+    },
+  });

@@ -1,183 +1,200 @@
-import { useState } from "react";
 import {
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
-const subscriptionsData = [
-  {
-    id: "1",
-    driver: "Moussa Traoré",
-    plan: "Journalier",
-    amount: "1000 FCFA",
-    status: "Actif",
-    expiry: "07/06/2026",
-  },
-  {
-    id: "2",
-    driver: "Amadou Diallo",
-    plan: "Journalier",
-    amount: "1000 FCFA",
-    status: "Expiré",
-    expiry: "05/06/2026",
-  },
-];
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
-export default function AdminSubscriptions() {
-  const [search, setSearch] = useState("");
+import { db } from "../../../firebase/config";
 
-  const filteredSubscriptions =
-    subscriptionsData.filter((item) =>
-      item.driver
-        .toLowerCase()
-        .includes(search.toLowerCase())
-    );
+export default function Subscriptions() {
+  const [drivers, setDrivers] =
+    useState([]);
 
-  const renderSubscription = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.driver}>
-        👨🏾‍✈️ {item.driver}
-      </Text>
+  useEffect(() => {
+    loadSubscriptions();
+  }, []);
 
-      <Text style={styles.info}>
-        📦 Offre : {item.plan}
-      </Text>
+  const loadSubscriptions =
+    async () => {
+      try {
+        const querySnapshot =
+          await getDocs(
+            collection(db, "users")
+          );
 
-      <Text style={styles.info}>
-        💰 Montant : {item.amount}
-      </Text>
+        const subscriptions = [];
 
-      <Text style={styles.info}>
-        📅 Expiration : {item.expiry}
-      </Text>
+        querySnapshot.forEach(
+          (document) => {
+            const user =
+              document.data();
 
-      <Text
-        style={[
-          styles.status,
-          item.status === "Actif"
-            ? styles.active
-            : styles.expired,
-        ]}
-      >
-        {item.status}
-      </Text>
-    </View>
-  );
+            if (
+              user.role ===
+              "driver"
+            ) {
+              subscriptions.push({
+                id: document.id,
+                ...user,
+              });
+            }
+          }
+        );
+
+        setDrivers(
+          subscriptions
+        );
+      } catch (error) {
+        console.log(error);
+      }
+    };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+    >
       <Text style={styles.title}>
-        Abonnements Chauffeurs
+        Abonnements
       </Text>
 
-      {/* Statistiques */}
-      <View style={styles.statsCard}>
-        <Text style={styles.statsTitle}>
-          Revenus Abonnements
-        </Text>
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        {drivers.length === 0 ? (
+          <Text style={styles.empty}>
+            Aucun abonnement
+          </Text>
+        ) : (
+          drivers.map(
+            (driver) => (
+              <View
+                key={driver.id}
+                style={
+                  styles.card
+                }
+              >
+                <Text
+                  style={
+                    styles.name
+                  }
+                >
+                  👤 {driver.name}
+                </Text>
 
-        <Text style={styles.statsAmount}>
-          325 000 FCFA
-        </Text>
+                <Text
+                  style={
+                    styles.info
+                  }
+                >
+                  📞 {driver.phone}
+                </Text>
 
-        <Text style={styles.statsInfo}>
-          Chauffeurs actifs : 385
-        </Text>
-      </View>
+                <Text
+                  style={
+                    styles.info
+                  }
+                >
+                  💰 Tarif :
+                  {" "}
+                  {driver.dailyFee ||
+                    100}
+                  {" "}
+                  FCFA
+                </Text>
 
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Rechercher un chauffeur..."
-        value={search}
-        onChangeText={setSearch}
-      />
+                <Text
+                  style={
+                    styles.info
+                  }
+                >
+                  📅 Paiement :
+                  {" "}
+                  {driver.subscriptionPaidAt ||
+                    "Non payé"}
+                </Text>
 
-      <FlatList
-        data={filteredSubscriptions}
-        keyExtractor={(item) => item.id}
-        renderItem={renderSubscription}
-        showsVerticalScrollIndicator={false}
-      />
+                <Text
+                  style={[
+                    styles.status,
+                    {
+                      color:
+                        driver.subscriptionActive
+                          ? "green"
+                          : "red",
+                    },
+                  ]}
+                >
+                  {driver.subscriptionActive
+                    ? "🟢 Actif"
+                    : "🔴 Inactif"}
+                </Text>
+              </View>
+            )
+          )
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginBottom: 20,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginBottom: 20,
+    },
 
-  statsCard: {
-    backgroundColor: "#FFF8E1",
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 20,
-  },
+    empty: {
+      textAlign: "center",
+      marginTop: 50,
+      color: "#666",
+    },
 
-  statsTitle: {
-    color: "#666",
-  },
+    card: {
+      backgroundColor:
+        "#F8F8F8",
+      borderRadius: 15,
+      padding: 15,
+      marginBottom: 15,
+    },
 
-  statsAmount: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginTop: 10,
-  },
+    name: {
+      fontSize: 18,
+      fontWeight: "bold",
+      marginBottom: 10,
+    },
 
-  statsInfo: {
-    marginTop: 10,
-    color: "#555",
-  },
+    info: {
+      color: "#555",
+      marginBottom: 5,
+    },
 
-  searchInput: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-  },
-
-  card: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
-  },
-
-  driver: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-
-  info: {
-    color: "#555",
-    marginBottom: 5,
-  },
-
-  status: {
-    marginTop: 10,
-    fontWeight: "bold",
-  },
-
-  active: {
-    color: "green",
-  },
-
-  expired: {
-    color: "#E53935",
-  },
-});
+    status: {
+      marginTop: 10,
+      fontWeight: "bold",
+    },
+  });

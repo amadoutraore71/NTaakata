@@ -183,6 +183,18 @@ export default function DriverDashboard() {
           Mes revenus
         </Text>
       </TouchableOpacity>
+      <TouchableOpacity
+  style={styles.secondaryButton}
+  onPress={() =>
+    router.push(
+      "/(driver)/my-rides"
+    )
+  }
+>
+  <Text style={styles.secondaryText}>
+    Mes courses
+  </Text>
+</TouchableOpacity>
     </SafeAreaView>
   );
 }

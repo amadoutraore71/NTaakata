@@ -1,153 +1,294 @@
 import {
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { router } from "expo-router";
 
-export default function AdminDashboard() {
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView>
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
 
+import { db } from "../../../firebase/config";
+
+export default function AdminDashboard() {
+  const [users, setUsers] =
+    useState(0);
+
+  const [drivers, setDrivers] =
+    useState(0);
+
+  const [rides, setRides] =
+    useState(0);
+
+  const [subscriptions,
+    setSubscriptions] =
+    useState(0);
+
+  useEffect(() => {
+    loadStatistics();
+  }, []);
+
+  const loadStatistics =
+    async () => {
+      try {
+        const usersSnapshot =
+          await getDocs(
+            collection(
+              db,
+              "users"
+            )
+          );
+
+        let totalUsers = 0;
+        let totalDrivers = 0;
+        let activeSubscriptions =
+          0;
+
+        usersSnapshot.forEach(
+          (document) => {
+            const user =
+              document.data();
+
+            totalUsers++;
+
+            if (
+              user.role ===
+              "driver"
+            ) {
+              totalDrivers++;
+            }
+
+            if (
+              user.subscriptionActive
+            ) {
+              activeSubscriptions++;
+            }
+          }
+        );
+
+        const ridesSnapshot =
+          await getDocs(
+            collection(
+              db,
+              "rides"
+            )
+          );
+
+        setUsers(totalUsers);
+        setDrivers(totalDrivers);
+        setSubscriptions(
+          activeSubscriptions
+        );
+        setRides(
+          ridesSnapshot.size
+        );
+      } catch (error) {
+        console.log(error);
+      }
+    };
+
+  return (
+    <SafeAreaView
+      style={styles.container}
+    >
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
         <Text style={styles.title}>
-          Administration
+          Tableau de bord Admin
         </Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>
-            Utilisateurs
+            👥 Utilisateurs
           </Text>
 
           <Text style={styles.value}>
-            2 540
+            {users}
           </Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.label}>
-            Chauffeurs
+            🚕 Conducteurs
           </Text>
 
           <Text style={styles.value}>
-            385
+            {drivers}
           </Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.label}>
-            Courses aujourd'hui
+            📍 Courses
           </Text>
 
           <Text style={styles.value}>
-            1 240
+            {rides}
           </Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.label}>
-            Revenus N'Taakata
+            💰 Abonnements actifs
           </Text>
 
           <Text style={styles.value}>
-            325 000 FCFA
+            {subscriptions}
           </Text>
         </View>
 
         <TouchableOpacity
           style={styles.button}
           onPress={() =>
-            router.push("/(admin)/users")
+            router.push(
+              "/(admin)/users"
+            )
           }
         >
-          <Text style={styles.buttonText}>
-            Gérer les utilisateurs
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
+            Voir les utilisateurs
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.button}
+          style={
+            styles.secondaryButton
+          }
           onPress={() =>
-            router.push("/(admin)/drivers")
+            router.push(
+              "/(admin)/rides"
+            )
           }
         >
-          <Text style={styles.buttonText}>
-            Gérer les chauffeurs
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() =>
-            router.push("/(admin)/rides")
-          }
-        >
-          <Text style={styles.buttonText}>
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
             Voir les courses
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() =>
+            router.push(
+              "/(admin)/drivers"
+            )
+          }
+        >
+          <Text style={styles.buttonText}>
+            Voir les conducteurs
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() =>
+            router.push(
+              "/(admin)/subscriptions"
+            )
+          }
+        >
+          <Text style={styles.buttonText}>
+            Voir les abonnements
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.button}
           onPress={() =>
-            router.push("/(admin)/subscriptions")
+            router.push(
+              "/(admin)/payments"
+            )
           }
         >
           <Text style={styles.buttonText}>
-            Gérer les abonnements
+            Voir les revenus
           </Text>
         </TouchableOpacity>
-
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginBottom: 20,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginBottom: 25,
+    },
 
-  card: {
-    backgroundColor: "#F8F8F8",
-    padding: 20,
-    borderRadius: 15,
-    marginBottom: 15,
-  },
+    card: {
+      backgroundColor:
+        "#F8F8F8",
+      borderRadius: 15,
+      padding: 20,
+      marginBottom: 15,
+    },
 
-  label: {
-    color: "#666",
-  },
+    label: {
+      color: "#666",
+      marginBottom: 10,
+    },
 
-  value: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginTop: 5,
-  },
+    value: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+    },
 
-  button: {
-    backgroundColor: "#F4C300",
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 10,
-    alignItems: "center",
-  },
+    button: {
+      backgroundColor:
+        "#0B6E4F",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems: "center",
+      marginTop: 20,
+    },
 
-  buttonText: {
-    fontWeight: "bold",
-  },
-});
+    secondaryButton: {
+      backgroundColor:
+        "#F4C300",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems: "center",
+      marginTop: 15,
+    },
+
+    buttonText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "bold",
+    },
+  });

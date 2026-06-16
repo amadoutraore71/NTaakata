@@ -1,5 +1,9 @@
-import { useState } from "react";
+import {
+  addDoc,
+  collection,
+} from "firebase/firestore";
 
+import { useState } from "react";
 import {
   Alert,
   SafeAreaView,
@@ -9,151 +13,186 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { calculateFare } from "../../utils/fareCalculator";
 
 import {
-  addDoc,
-  collection,
-} from "firebase/firestore";
+  router,
+} from "expo-router";
 
 import { db } from "../../../firebase/config";
 
 import LogoutButton from "../../components/LogoutButton";
-import { getUser } from "../../storage/userStorage";
+
+import {
+  getUser,
+} from "../../storage/userStorage";
 
 export default function PassengerHome() {
-  const [pickup, setPickup] = useState("");
-  const [destination, setDestination] =
+  const [pickup, setPickup] =
     useState("");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [destination,
+    setDestination] =
+    useState("");
 
-  const handleRideRequest = async () => {
-    try {
-      if (!pickup.trim()) {
-        Alert.alert(
-          "Erreur",
-          "Veuillez saisir le point de départ"
-        );
-        return;
-      }
-
-      if (!destination.trim()) {
-        Alert.alert(
-          "Erreur",
-          "Veuillez saisir la destination"
-        );
-        return;
-      }
-
-      setLoading(true);
-
-      const user = await getUser();
-
-      if (!user) {
-        Alert.alert(
-          "Erreur",
-          "Utilisateur introuvable"
-        );
-        setLoading(false);
-        return;
-      }
-
-      await addDoc(
-        collection(db, "rides"),
-        {
-          pickup,
-          destination,
-
-          passengerPhone:
-            user.phone,
-
-          price: 1500,
-
-          status: "pending",
-
-          createdAt:
-            new Date().toISOString(),
+  const handleRideRequest =
+    async () => {
+      try {
+        if (
+          !pickup ||
+          !destination
+        ) {
+          Alert.alert(
+            "Erreur",
+            "Veuillez renseigner le départ et la destination"
+          );
+          return;
         }
-      );
 
-      Alert.alert(
-        "Succès",
-        "Votre demande de course a été envoyée."
-      );
+        const user =
+          await getUser();
+        const price = calculateFare(
+          pickup,
+          destination
+        );
+        await addDoc(
+          collection(
+            db,
+            "rides"
+          ),
+          {
+            pickup,
+            destination,
 
-      setPickup("");
-      setDestination("");
+            passengerPhone:
+              user?.phone ||
+              "",
 
-      setLoading(false);
-    } catch (error) {
-      console.log(error);
+            price,
 
-      setLoading(false);
+            status:
+              "pending",
 
-      Alert.alert(
-        "Erreur",
-        "Impossible d'envoyer la demande."
-      );
-    }
-  };
+            createdAt:
+              new Date().toISOString(),
+          }
+        );
+
+        setPickup("");
+        setDestination("");
+
+        router.push(
+          "/(passenger)/ride-status"
+        );
+      } catch (error) {
+        console.log(error);
+
+        Alert.alert(
+          "Erreur",
+          "Impossible d'envoyer la demande"
+        );
+      }
+    };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>
+    <SafeAreaView
+      style={styles.container}
+    >
+      <View
+        style={styles.header}
+      >
+        <Text
+          style={styles.title}
+        >
           Commander une course
         </Text>
 
         <LogoutButton />
       </View>
 
-      {/* Formulaire */}
       <View style={styles.card}>
-        <Text style={styles.label}>
+        <Text
+          style={styles.label}
+        >
           📍 Point de départ
         </Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Ex : Sogoniko"
+          placeholder="Ex: Sogoniko"
           value={pickup}
-          onChangeText={setPickup}
+          onChangeText={
+            setPickup
+          }
         />
 
-        <Text style={styles.label}>
+        <Text
+          style={styles.label}
+        >
           🎯 Destination
         </Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Ex : Kalaban Coura"
+          placeholder="Ex: Kalaban Coura"
           value={destination}
-          onChangeText={setDestination}
+          onChangeText={
+            setDestination
+          }
         />
 
-        {/* Prix estimé */}
-        <View style={styles.priceCard}>
-          <Text style={styles.priceLabel}>
+        <View
+          style={
+            styles.priceCard
+          }
+        >
+          <Text
+            style={
+              styles.priceLabel
+            }
+          >
             Prix estimé
           </Text>
 
-          <Text style={styles.price}>
-            1500 FCFA
-          </Text>
+         <Text style={styles.price}>
+          {calculateFare(
+            pickup,
+            destination
+          )} FCFA
+        </Text>
         </View>
 
-        {/* Bouton */}
         <TouchableOpacity
           style={styles.button}
-          onPress={handleRideRequest}
-          disabled={loading}
+          onPress={
+            handleRideRequest
+          }
         >
-          <Text style={styles.buttonText}>
-            {loading
-              ? "Envoi..."
-              : "Commander"}
+          <Text
+            style={
+              styles.buttonText
+            }
+          >
+            Commander
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={
+            styles.historyButton
+          }
+          onPress={() =>
+            router.push(
+              "/(passenger)/history"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.historyText
+            }
+          >
+            Mes Courses
           </Text>
         </TouchableOpacity>
       </View>
@@ -161,79 +200,107 @@ export default function PassengerHome() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 25,
-  },
+    header: {
+      flexDirection:
+        "row",
+      justifyContent:
+        "space-between",
+      alignItems:
+        "center",
+      marginBottom: 20,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-  },
+    title: {
+      fontSize: 28,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+    },
 
-  card: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 15,
-    padding: 20,
-  },
+    card: {
+      backgroundColor:
+        "#F8F8F8",
+      borderRadius: 15,
+      padding: 20,
+    },
 
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-    marginTop: 10,
-  },
+    label: {
+      fontWeight: "600",
+      marginBottom: 8,
+      marginTop: 10,
+    },
 
-  input: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E5E5",
-    borderRadius: 12,
-    height: 55,
-    paddingHorizontal: 15,
-  },
+    input: {
+      backgroundColor:
+        "#FFFFFF",
+      borderWidth: 1,
+      borderColor:
+        "#E5E5E5",
+      borderRadius: 12,
+      paddingHorizontal: 15,
+      height: 55,
+    },
 
-  priceCard: {
-    backgroundColor: "#FFF3CD",
-    borderRadius: 12,
-    padding: 15,
-    marginTop: 20,
-  },
+    priceCard: {
+      backgroundColor:
+        "#FFF3CD",
+      padding: 15,
+      borderRadius: 12,
+      marginTop: 20,
+    },
 
-  priceLabel: {
-    color: "#666",
-    fontSize: 14,
-  },
+    priceLabel: {
+      color: "#666",
+    },
 
-  price: {
-    marginTop: 5,
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-  },
+    price: {
+      fontSize: 24,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginTop: 5,
+    },
 
-  button: {
-    backgroundColor: "#F4C300",
-    height: 55,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
-  },
+    button: {
+      backgroundColor:
+        "#F4C300",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      marginTop: 20,
+    },
 
-  buttonText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#000",
-  },
-});
+    buttonText: {
+      fontSize: 18,
+      fontWeight: "bold",
+    },
+
+    historyButton: {
+      backgroundColor:
+        "#0B6E4F",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      marginTop: 15,
+    },
+
+    historyText: {
+      color: "#FFFFFF",
+      fontSize: 16,
+      fontWeight: "bold",
+    },
+  });

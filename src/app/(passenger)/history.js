@@ -1,126 +1,177 @@
 import {
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    View,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
-const rides = [
-  {
-    id: "1",
-    date: "02 Juin 2026",
-    from: "Sogoniko",
-    to: "Badalabougou",
-    amount: "1500 FCFA",
-    status: "Terminée",
-  },
-  {
-    id: "2",
-    date: "01 Juin 2026",
-    from: "Kalaban Coura",
-    to: "ACI 2000",
-    amount: "2500 FCFA",
-    status: "Terminée",
-  },
-  {
-    id: "3",
-    date: "30 Mai 2026",
-    from: "Banankabougou",
-    to: "Hamdallaye",
-    amount: "1800 FCFA",
-    status: "Terminée",
-  },
-];
+import {
+  collection,
+  getDocs,
+} from "firebase/firestore";
+
+import { db } from "../../../firebase/config";
+import { getUser } from "../../storage/userStorage";
 
 export default function History() {
-  const renderRide = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.date}>
-        {item.date}
-      </Text>
+  const [rides, setRides] =
+    useState([]);
 
-      <Text style={styles.route}>
-        📍 {item.from}
-      </Text>
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
-      <Text style={styles.route}>
-        🎯 {item.to}
-      </Text>
+  const loadHistory = async () => {
+    try {
+      const user =
+        await getUser();
 
-      <View style={styles.footer}>
-        <Text style={styles.amount}>
-          {item.amount}
-        </Text>
+      if (!user) return;
 
-        <Text style={styles.status}>
-          {item.status}
-        </Text>
-      </View>
-    </View>
-  );
+      const querySnapshot =
+        await getDocs(
+          collection(db, "rides")
+        );
+
+      const history = [];
+
+      querySnapshot.forEach(
+        (document) => {
+          const data =
+            document.data();
+
+          if (
+            data.passengerPhone ===
+            user.phone
+          ) {
+            history.push({
+              id: document.id,
+              ...data,
+            });
+          }
+        }
+      );
+
+      setRides(history.reverse());
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+    >
       <Text style={styles.title}>
-        Historique des courses
+        Mes Courses
       </Text>
 
-      <FlatList
-        data={rides}
-        keyExtractor={(item) => item.id}
-        renderItem={renderRide}
-        showsVerticalScrollIndicator={false}
-      />
+      <ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        {rides.length === 0 ? (
+          <Text style={styles.empty}>
+            Aucune course
+          </Text>
+        ) : (
+          rides.map((ride) => (
+            <View
+              key={ride.id}
+              style={styles.card}
+            >
+              <Text style={styles.route}>
+                📍 {ride.pickup}
+              </Text>
+
+              <Text style={styles.route}>
+                🎯 {ride.destination}
+              </Text>
+
+              <Text style={styles.price}>
+                💰 {ride.price} FCFA
+              </Text>
+
+              <Text style={styles.status}>
+                🚕 {ride.status}
+              </Text>
+
+              {ride.driverPhone && (
+                <Text
+                  style={
+                    styles.driver
+                  }
+                >
+                  📞 Chauffeur :
+                  {" "}
+                  {ride.driverPhone}
+                </Text>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      padding: 20,
+      marginTop: 80,
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-    marginBottom: 20,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginBottom: 20,
+    },
 
-  card: {
-    backgroundColor: "#F8F8F8",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
-  },
+    empty: {
+      textAlign: "center",
+      marginTop: 50,
+      color: "#666",
+    },
 
-  date: {
-    color: "#666",
-    marginBottom: 10,
-  },
+    card: {
+      backgroundColor:
+        "#F8F8F8",
+      borderRadius: 15,
+      padding: 15,
+      marginBottom: 15,
+    },
 
-  route: {
-    fontSize: 16,
-    marginBottom: 5,
-  },
+    route: {
+      fontSize: 16,
+      marginBottom: 5,
+    },
 
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-  },
+    price: {
+      fontWeight: "bold",
+      color: "#0B6E4F",
+      marginTop: 10,
+    },
 
-  amount: {
-    color: "#0B6E4F",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
+    status: {
+      marginTop: 5,
+      color: "#666",
+      fontWeight: "bold",
+    },
 
-  status: {
-    color: "green",
-    fontWeight: "600",
-  },
-});
+    driver: {
+      marginTop: 8,
+      color: "#333",
+    },
+  });

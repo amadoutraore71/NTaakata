@@ -63,63 +63,58 @@ export default function Requests() {
     }
   };
 
-  const acceptRide = async (ride) => {
-    try {
-      const driver =
-        await getUser();
+ const acceptRide = async (ride) => {
+  try {
+    const driver =
+      await getUser();
 
-      await updateDoc(
-        doc(db, "rides", ride.id),
-        {
-          status: "accepted",
+    await updateDoc(
+      doc(db, "rides", ride.id),
+      {
+        status: "accepted",
 
-          driverPhone:
-            driver?.phone || "",
+        driverPhone:
+          driver.phone,
+      }
+    );
 
-          acceptedAt:
-            new Date().toISOString(),
-        }
-      );
+    Alert.alert(
+      "Succès",
+      "Course acceptée"
+    );
 
-      Alert.alert(
-        "Succès",
-        "Course acceptée"
-      );
+    loadRequests();
 
-      loadRequests();
-    } catch (error) {
-      console.log(error);
+  } catch (error) {
+    console.log(error);
 
-      Alert.alert(
-        "Erreur",
-        "Impossible d'accepter la course"
-      );
-    }
-  };
+    Alert.alert(
+      "Erreur",
+      "Impossible d'accepter la course"
+    );
+  }
+};
 
   const rejectRide = async (ride) => {
-    try {
-      await updateDoc(
-        doc(db, "rides", ride.id),
-        {
-          status: "rejected",
-        }
-      );
+  try {
+    await updateDoc(
+      doc(db, "rides", ride.id),
+      {
+        status: "rejected",
+      }
+    );
 
-      Alert.alert(
-        "Course refusée"
-      );
+    Alert.alert(
+      "Succès",
+      "Course refusée"
+    );
 
-      loadRequests();
-    } catch (error) {
-      console.log(error);
+    loadRequests();
 
-      Alert.alert(
-        "Erreur",
-        "Impossible de refuser la course"
-      );
-    }
-  };
+  } catch (error) {
+    console.log(error);
+  }
+};
 
   if (loading) {
     return (
