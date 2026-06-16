@@ -53,15 +53,27 @@ export default function Subscription() {
       const driverDoc =
         querySnapshot.docs[0];
 
-      await updateDoc(
-        driverDoc.ref,
-        {
-          subscriptionActive: true,
-          dailyFee: 100,
-          subscriptionPaidAt:
-            new Date().toISOString(),
-        }
-      );
+     const now = new Date();
+
+const expiresAt = new Date(
+  now.getTime() +
+  24 * 60 * 60 * 1000
+);
+
+await updateDoc(
+  driverDoc.ref,
+  {
+    subscriptionActive: true,
+
+    dailyFee: 100,
+
+    subscriptionPaidAt:
+      now.toISOString(),
+
+    subscriptionExpiresAt:
+      expiresAt.toISOString(),
+  }
+);
 
       Alert.alert(
         "Paiement validé",

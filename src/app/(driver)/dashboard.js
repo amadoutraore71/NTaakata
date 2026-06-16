@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import LogoutButton from "../../components/LogoutButton";
 
 import { router } from "expo-router";
 
@@ -15,11 +14,15 @@ import {
   collection,
   getDocs,
   query,
+  updateDoc,
   where,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
+
+import LogoutButton from "../../components/LogoutButton";
 import { getUser } from "../../storage/userStorage";
+import { isSubscriptionValid } from "../../utils/subscriptionChecker";
 
 export default function DriverDashboard() {
   const [subscriptionActive, setSubscriptionActive] =
@@ -29,14 +32,14 @@ export default function DriverDashboard() {
     useState(true);
 
   useEffect(() => {
-    loadDriver();
+    checkSubscription();
   }, []);
 
-  const loadDriver = async () => {
+  const checkSubscription = async () => {
     try {
       const user = await getUser();
 
-      if (!user) {
+      if (!user?.phone) {
         setLoading(false);
         return;
       }
@@ -49,21 +52,38 @@ export default function DriverDashboard() {
       const querySnapshot =
         await getDocs(q);
 
-      if (!querySnapshot.empty) {
-        const driver =
-          querySnapshot.docs[0].data();
+      if (querySnapshot.empty) {
+        setLoading(false);
+        return;
+      }
 
-        setSubscriptionActive(
-          driver.subscriptionActive || false
+      const driverDoc =
+        querySnapshot.docs[0];
+
+      const data =
+        driverDoc.data();
+
+      const valid =
+        isSubscriptionValid(
+          data.subscriptionExpiresAt
         );
 
-        console.log(
-          "subscriptionActive =",
-          driver.subscriptionActive
+      if (
+        !valid &&
+        data.subscriptionActive
+      ) {
+        await updateDoc(
+          driverDoc.ref,
+          {
+            subscriptionActive: false,
+          }
         );
       }
 
+      setSubscriptionActive(valid);
+
       setLoading(false);
+
     } catch (error) {
       console.log(error);
       setLoading(false);
@@ -82,24 +102,24 @@ export default function DriverDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
-      
       <View style={styles.header}>
         <Text style={styles.title}>
           Tableau de bord
         </Text>
+
         <LogoutButton />
       </View>
+
       {!subscriptionActive && (
         <View style={styles.warningCard}>
           <Text style={styles.warningText}>
-            🔒 Votre abonnement conducteur
-            n'est pas actif.
+            🔒 Votre abonnement conducteur n'est pas actif.
           </Text>
 
           <Text style={styles.warningSubText}>
-            Activez votre abonnement
-            journalier de 100 FCFA pour
-            recevoir des demandes de courses.
+            Activez votre abonnement journalier de
+            100 FCFA pour recevoir des demandes
+            de courses.
           </Text>
 
           <TouchableOpacity
@@ -183,18 +203,19 @@ export default function DriverDashboard() {
           Mes revenus
         </Text>
       </TouchableOpacity>
+
       <TouchableOpacity
-  style={styles.secondaryButton}
-  onPress={() =>
-    router.push(
-      "/(driver)/my-rides"
-    )
-  }
->
-  <Text style={styles.secondaryText}>
-    Mes courses
-  </Text>
-</TouchableOpacity>
+        style={styles.secondaryButton}
+        onPress={() =>
+          router.push(
+            "/(driver)/my-rides"
+          )
+        }
+      >
+        <Text style={styles.secondaryText}>
+          Mes courses
+        </Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -204,13 +225,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFF",
     padding: 20,
-    marginTop: 100
+    marginTop: 100,
   },
 
   loading: {
     fontSize: 18,
     textAlign: "center",
     marginTop: 50,
+  },
+
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
 
   title: {
@@ -324,9 +351,4 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  header: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-},
 });

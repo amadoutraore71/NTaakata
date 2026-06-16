@@ -10,7 +10,10 @@ import {
   View,
 } from "react-native";
 
-import { router, useLocalSearchParams } from "expo-router";
+import {
+  router,
+  useLocalSearchParams,
+} from "expo-router";
 
 import {
   doc,
@@ -18,116 +21,179 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
-import { saveUser } from "../../storage/userStorage";
+
+import {
+  saveUser,
+} from "../../storage/userStorage";
 
 export default function Otp() {
- const {
-  fullName,
-  phone,
-  role,
-} = useLocalSearchParams();
+  const {
+    fullName,
+    phone,
+    role,
+  } = useLocalSearchParams();
 
-  const [otp, setOtp] = useState([
-    "",
-    "",
-    "",
-    "",
-  ]);
+  const [otp, setOtp] =
+    useState([
+      "",
+      "",
+      "",
+      "",
+    ]);
 
-  const input1 = useRef(null);
-  const input2 = useRef(null);
-  const input3 = useRef(null);
-  const input4 = useRef(null);
+  const input1 =
+    useRef(null);
 
-  const handleChange = (value, index) => {
-    const newOtp = [...otp];
-    newOtp[index] = value;
+  const input2 =
+    useRef(null);
+
+  const input3 =
+    useRef(null);
+
+  const input4 =
+    useRef(null);
+
+  const handleChange = (
+    value,
+    index
+  ) => {
+    const newOtp =
+      [...otp];
+
+    newOtp[index] =
+      value;
+
     setOtp(newOtp);
 
-    if (value && index === 0)
+    if (
+      value &&
+      index === 0
+    )
       input2.current?.focus();
 
-    if (value && index === 1)
+    if (
+      value &&
+      index === 1
+    )
       input3.current?.focus();
 
-    if (value && index === 2)
+    if (
+      value &&
+      index === 2
+    )
       input4.current?.focus();
   };
 
-  const verifyCode = async () => {
-    const enteredCode = otp.join("");
+  const verifyCode =
+    async () => {
+      const enteredCode =
+        otp.join("");
 
-    if (enteredCode !== "1234") {
-      Alert.alert(
-        "Erreur",
-        "Code OTP incorrect"
-      );
-      return;
-    }
+      if (
+        enteredCode !==
+        "1234"
+      ) {
+        Alert.alert(
+          "Erreur",
+          "Code OTP incorrect"
+        );
+        return;
+      }
 
-    try {
-    const userId = Date.now().toString();
+      try {
+        const userId =
+          Date.now().toString();
 
-      console.log("FULLNAME =", fullName);
-      console.log("PHONE =", phone);
-      console.log("ROLE =", role);
+        await setDoc(
+          doc(
+            db,
+            "users",
+            userId
+          ),
+          {
+            name: fullName,
 
-await setDoc(
-  doc(db, "users", userId),
-  {
-    name: fullName,
-    phone: phone,
-    role: role,
+            phone: phone,
 
-    subscriptionActive:
-      role === "driver"
-        ? false
-        : true,
+            role: role,
 
-    dailyFee:
-      role === "driver"
-        ? 100
-        : 0,
+            subscriptionActive:
+              role ===
+              "driver"
+                ? false
+                : true,
 
-    createdAt:
-      new Date().toISOString(),
-  }
-);
+            subscriptionPaidAt:
+              null,
 
- 
-await saveUser({
-  userId,
-  phone,
-  role,
-});
+            subscriptionExpiresAt:
+              null,
 
-Alert.alert(
-  "Succès",
-  "Compte créé avec succès"
-);
+            dailyFee:
+              role ===
+              "driver"
+                ? 100
+                : 0,
 
-    if (role === "passenger") {
-  router.replace("/(passenger)/home");
-  return;
-}
+            createdAt:
+              new Date().toISOString(),
+          }
+        );
 
-if (role === "driver") {
-  router.replace("/(driver)/dashboard");
-  return;
-}
+        await saveUser({
+          userId,
+          phone,
+          role,
+        });
 
-    } catch (error) {
-      console.log(error);
+        Alert.alert(
+          "Succès",
+          "Compte créé avec succès"
+        );
 
-      Alert.alert(
-        "Erreur",
-        "Impossible de créer le compte"
-      );
-    }
-  };
+        if (
+          role ===
+          "passenger"
+        ) {
+          router.replace(
+            "/(passenger)/home"
+          );
+          return;
+        }
+
+        if (
+          role ===
+          "driver"
+        ) {
+          router.replace(
+            "/(driver)/dashboard"
+          );
+          return;
+        }
+
+        if (
+          role ===
+          "admin"
+        ) {
+          router.replace(
+            "/(admin)/dashboard"
+          );
+        }
+
+      } catch (error) {
+        console.log(error);
+
+        Alert.alert(
+          "Erreur",
+          "Impossible de créer le compte"
+        );
+      }
+    };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+    >
       <StatusBar
         barStyle="dark-content"
         backgroundColor="#FFFFFF"
@@ -137,22 +203,36 @@ if (role === "driver") {
         Vérification
       </Text>
 
-      <Text style={styles.subtitle}>
-        Entrez le code reçu par SMS
+      <Text
+        style={styles.subtitle}
+      >
+        Entrez le code reçu
+        par SMS
       </Text>
 
-      <Text style={styles.phone}>
+      <Text
+        style={styles.phone}
+      >
         {phone}
       </Text>
 
-      <View style={styles.otpContainer}>
+      <View
+        style={
+          styles.otpContainer
+        }
+      >
         <TextInput
           ref={input1}
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
-          onChangeText={(text) =>
-            handleChange(text, 0)
+          onChangeText={(
+            text
+          ) =>
+            handleChange(
+              text,
+              0
+            )
           }
         />
 
@@ -161,8 +241,13 @@ if (role === "driver") {
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
-          onChangeText={(text) =>
-            handleChange(text, 1)
+          onChangeText={(
+            text
+          ) =>
+            handleChange(
+              text,
+              1
+            )
           }
         />
 
@@ -171,8 +256,13 @@ if (role === "driver") {
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
-          onChangeText={(text) =>
-            handleChange(text, 2)
+          onChangeText={(
+            text
+          ) =>
+            handleChange(
+              text,
+              2
+            )
           }
         />
 
@@ -181,17 +271,30 @@ if (role === "driver") {
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
-          onChangeText={(text) =>
-            handleChange(text, 3)
+          onChangeText={(
+            text
+          ) =>
+            handleChange(
+              text,
+              3
+            )
           }
         />
       </View>
 
       <TouchableOpacity
-        style={styles.verifyButton}
-        onPress={verifyCode}
+        style={
+          styles.verifyButton
+        }
+        onPress={
+          verifyCode
+        }
       >
-        <Text style={styles.verifyText}>
+        <Text
+          style={
+            styles.verifyText
+          }
+        >
           Vérifier
         </Text>
       </TouchableOpacity>
@@ -203,65 +306,73 @@ if (role === "driver") {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 25,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      paddingHorizontal: 25,
+    },
 
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#0B6E4F",
-  },
+    title: {
+      fontSize: 32,
+      fontWeight: "bold",
+      color: "#0B6E4F",
+    },
 
-  subtitle: {
-    color: "#666",
-    marginTop: 10,
-    textAlign: "center",
-  },
+    subtitle: {
+      color: "#666",
+      marginTop: 10,
+      textAlign: "center",
+    },
 
-  phone: {
-    marginTop: 10,
-    color: "#0B6E4F",
-    fontWeight: "bold",
-  },
+    phone: {
+      marginTop: 10,
+      color: "#0B6E4F",
+      fontWeight: "bold",
+    },
 
-  otpContainer: {
-    flexDirection: "row",
-    marginVertical: 40,
-  },
+    otpContainer: {
+      flexDirection: "row",
+      marginVertical: 40,
+    },
 
-  input: {
-    width: 60,
-    height: 60,
-    borderWidth: 1,
-    borderColor: "#E5E5E5",
-    borderRadius: 12,
-    textAlign: "center",
-    fontSize: 24,
-    marginHorizontal: 6,
-  },
+    input: {
+      width: 60,
+      height: 60,
+      borderWidth: 1,
+      borderColor:
+        "#E5E5E5",
+      borderRadius: 12,
+      textAlign: "center",
+      fontSize: 24,
+      marginHorizontal: 6,
+    },
 
-  verifyButton: {
-    backgroundColor: "#F4C300",
-    width: "100%",
-    height: 55,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+    verifyButton: {
+      backgroundColor:
+        "#F4C300",
+      width: "100%",
+      height: 55,
+      borderRadius: 12,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+    },
 
-  verifyText: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
+    verifyText: {
+      fontSize: 18,
+      fontWeight: "bold",
+    },
 
-  demo: {
-    marginTop: 20,
-    color: "#666",
-  },
-});
+    demo: {
+      marginTop: 20,
+      color: "#666",
+    },
+  });
