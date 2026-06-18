@@ -3,7 +3,10 @@ import {
   collection,
 } from "firebase/firestore";
 
-import { useState } from "react";
+import {
+  useState,
+} from "react";
+
 import {
   Alert,
   SafeAreaView,
@@ -13,7 +16,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { calculateFare } from "../../utils/fareCalculator";
 
 import {
   router,
@@ -27,13 +29,18 @@ import {
   getUser,
 } from "../../storage/userStorage";
 
+import {
+  calculateFare,
+} from "../../utils/fareCalculator";
+
 export default function PassengerHome() {
   const [pickup, setPickup] =
     useState("");
 
-  const [destination,
-    setDestination] =
-    useState("");
+  const [
+    destination,
+    setDestination,
+  ] = useState("");
 
   const handleRideRequest =
     async () => {
@@ -51,31 +58,41 @@ export default function PassengerHome() {
 
         const user =
           await getUser();
-        const price = calculateFare(
-          pickup,
-          destination
-        );
-        await addDoc(
-          collection(
-            db,
-            "rides"
-          ),
-          {
+
+        const distance = 7;
+
+        const price =
+          calculateFare(
             pickup,
-            destination,
+            destination
+          );
 
-            passengerPhone:
-              user?.phone ||
-              "",
+await addDoc(
+  collection(db, "rides"),
+  {
+    pickup,
+    destination,
 
-            price,
+    passengerName:
+      user?.name || "",
 
-            status:
-              "pending",
+    passengerPhone:
+      user?.phone || "",
 
-            createdAt:
-              new Date().toISOString(),
-          }
+    distance,
+
+    price,
+
+    status: "pending",
+
+    createdAt:
+      new Date().toISOString(),
+  }
+);
+
+        Alert.alert(
+          "Succès",
+          "Votre demande a été envoyée"
         );
 
         setPickup("");
@@ -84,6 +101,7 @@ export default function PassengerHome() {
         router.push(
           "/(passenger)/ride-status"
         );
+
       } catch (error) {
         console.log(error);
 
@@ -151,15 +169,34 @@ export default function PassengerHome() {
               styles.priceLabel
             }
           >
+            Distance estimée
+          </Text>
+
+          <Text
+            style={styles.price}
+          >
+            7 km
+          </Text>
+
+          <Text
+            style={[
+              styles.priceLabel,
+              {
+                marginTop: 10,
+              },
+            ]}
+          >
             Prix estimé
           </Text>
 
-         <Text style={styles.price}>
-          {calculateFare(
-            pickup,
-            destination
-          )} FCFA
-        </Text>
+          <Text
+            style={styles.price}
+          >
+            {calculateFare(
+              pickup,
+              destination
+            )} FCFA
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -195,6 +232,34 @@ export default function PassengerHome() {
             Mes Courses
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() =>
+              router.push(
+                "/(passenger)/drivers-nearby"
+              )
+            }
+          >
+            <Text
+              style={styles.historyText}
+            >
+              Conducteurs disponibles
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+  style={styles.historyButton}
+  onPress={() =>
+    router.push(
+      "/(passenger)/drivers-map"
+    )
+  }
+>
+  <Text
+    style={styles.historyText}
+  >
+    Voir la carte
+  </Text>
+</TouchableOpacity>
       </View>
     </SafeAreaView>
   );

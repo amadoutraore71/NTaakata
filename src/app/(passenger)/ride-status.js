@@ -3,6 +3,11 @@ import {
   useState,
 } from "react";
 
+import { router } from "expo-router";
+import {
+  collection,
+  onSnapshot,
+} from "firebase/firestore";
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -10,11 +15,6 @@ import {
   Text,
   View,
 } from "react-native";
-
-import {
-  collection,
-  getDocs,
-} from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
 import { getUser } from "../../storage/userStorage";
@@ -25,57 +25,98 @@ export default function RideStatus() {
 
   const [loading, setLoading] =
     useState(true);
-
+useEffect(() => {
+  if (
+    ride?.status === "completed" &&
+    ride?.driverPhone &&
+    !ride.ratingSubmitted
+  ) {
+    router.push({
+      pathname:
+        "/(passenger)/rate-driver",
+      params: {
+        rideId: ride.id,
+        driverPhone:
+          ride.driverPhone,
+        driverName:
+          ride.driverName,
+      },
+    });
+  }
+}, [ride]);
   useEffect(() => {
-    loadRide();
+  let unsubscribe;
 
-    const interval =
-      setInterval(() => {
-        loadRide();
-      }, 3000);
+  const init = async () => {
+    const user =
+      await getUser();
 
-    return () =>
-      clearInterval(interval);
-  }, []);
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
-  const loadRide = async () => {
-    try {
-      const user =
-        await getUser();
+    unsubscribe =
+      onSnapshot(
+        collection(db, "rides"),
+        (snapshot) => {
+          let lastRide = null;
 
-      if (!user) return;
+          snapshot.forEach(
+            (document) => {
+              const data =
+                document.data();
 
-      const querySnapshot =
-        await getDocs(
-          collection(db, "rides")
-        );
+              if (
+                data.passengerPhone ===
+                user.phone
+              ) {
+                lastRide = {
+                  id: document.id,
+                  ...data,
+                };
+              }
+            }
+          );
+snapshot.forEach((document) => {
+  const data = document.data();
 
-      let lastRide = null;
+  if (
+    data.passengerPhone ===
+    user.phone
+  ) {
+    console.log(
+      "COURSE TROUVEE =",
+      document.id,
+      data.status
+    );
 
-      querySnapshot.forEach(
-        (doc) => {
-          const data =
-            doc.data();
-
-          if (
-            data.passengerPhone ===
-            user.phone
-          ) {
-            lastRide = {
-              id: doc.id,
-              ...data,
-            };
-          }
+    if (
+      !lastRide ||
+      new Date(data.createdAt) >
+        new Date(lastRide.createdAt)
+    ) {
+      lastRide = {
+        id: document.id,
+        ...data,
+      };
+    }
+  }
+});
+          setRide(lastRide);
+          setLoading(false);
         }
       );
-
-      setRide(lastRide);
-      setLoading(false);
-    } catch (error) {
-      console.log(error);
-      setLoading(false);
-    }
   };
+
+  init();
+
+  return () => {
+    if (unsubscribe)
+      unsubscribe();
+  };
+}, []);
+
 
   if (loading) {
     return (
@@ -126,7 +167,13 @@ export default function RideStatus() {
         <Text style={styles.value}>
           {ride.destination}
         </Text>
+        <Text style={styles.label}>
+          📏 Distance
+        </Text>
 
+        <Text style={styles.value}>
+          {ride.distance || 0} km
+        </Text>
         <Text style={styles.label}>
           💰 Prix
         </Text>
@@ -152,9 +199,8 @@ export default function RideStatus() {
   ]}>
         {ride.status === "pending" &&
           "🔍 Recherche d'un chauffeur..."}
-
         {ride.status === "accepted" &&
-          "🚕 Chauffeur trouvé"}
+          "🚕 Chauffeur trouvé et en route"}
 
         {ride.status === "in_progress" &&
           "🛣️ Course en cours"}
@@ -162,6 +208,18 @@ export default function RideStatus() {
         {ride.status === "completed" &&
           "✅ Course terminée"}
       </Text>
+    
+        {ride.driverName && (
+  <>
+            <Text style={styles.label}>
+              👤 Chauffeur
+            </Text>
+
+            <Text style={styles.value}>
+              {ride.driverName}
+            </Text>
+          </>
+        )}
         {ride.driverPhone && (
           <>
             <Text
@@ -181,6 +239,18 @@ export default function RideStatus() {
                 ride.driverPhone
               }
             </Text>
+         
+            {ride.vehicleType && (
+            <>
+              <Text style={styles.label}>
+                🚗 Véhicule
+              </Text>
+
+              <Text style={styles.value}>
+                {ride.vehicleType}
+              </Text>
+            </>
+          )}
           </>
         )}
       </View>

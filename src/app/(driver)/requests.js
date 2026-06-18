@@ -63,20 +63,48 @@ export default function Requests() {
     }
   };
 
+  const startRide = async (ride) => {
+  try {
+    await updateDoc(
+      doc(db, "rides", ride.id),
+      {
+        status: "in_progress",
+      }
+    );
+
+    Alert.alert(
+      "Succès",
+      "Course démarrée"
+    );
+
+    loadRequests();
+
+  } catch (error) {
+    console.log(error);
+  }
+};
+
  const acceptRide = async (ride) => {
   try {
     const driver =
       await getUser();
+console.log("DRIVER =", driver);
+ await updateDoc(
+  doc(db, "rides", ride.id),
+  {
+    status: "accepted",
 
-    await updateDoc(
-      doc(db, "rides", ride.id),
-      {
-        status: "accepted",
+    driverPhone:
+      driver.phone,
 
-        driverPhone:
-          driver.phone,
-      }
-    );
+    driverName:
+      driver.name || "Conducteur",
+
+    vehicleType:
+      driver.vehicleType ||
+      "Moto",
+  }
+);
 
     Alert.alert(
       "Succès",

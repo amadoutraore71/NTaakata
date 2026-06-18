@@ -19,11 +19,10 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
-
 import LogoutButton from "../../components/LogoutButton";
 import { getUser } from "../../storage/userStorage";
 import { isSubscriptionValid } from "../../utils/subscriptionChecker";
-
+import DriverLocation from "./driver-location";
 export default function DriverDashboard() {
   const [subscriptionActive, setSubscriptionActive] =
     useState(false);
@@ -32,13 +31,26 @@ export default function DriverDashboard() {
     useState(true);
 
   useEffect(() => {
-    checkSubscription();
-  }, []);
+  checkSubscription();
+  loadStats();
+}, []);
+ 
 
+const [isOnline, setIsOnline] =
+  useState(false);
+const [totalRevenue, setTotalRevenue] =
+  useState(0);
+const [averageRating, setAverageRating] =
+  useState(0);
+
+const [totalRatings, setTotalRatings] =
+  useState(0);
+const [totalRides, setTotalRides] =
+  useState(0);
   const checkSubscription = async () => {
     try {
       const user = await getUser();
-
+      console.log(user);
       if (!user?.phone) {
         setLoading(false);
         return;
@@ -62,6 +74,13 @@ export default function DriverDashboard() {
 
       const data =
         driverDoc.data();
+        setAverageRating(
+        data.averageRating || 0
+      );
+
+      setTotalRatings(
+        data.totalRatings || 0
+      );
 
       const valid =
         isSubscriptionValid(
@@ -81,6 +100,9 @@ export default function DriverDashboard() {
       }
 
       setSubscriptionActive(valid);
+      setIsOnline(
+        data.isOnline || false
+      );
 
       setLoading(false);
 
@@ -89,10 +111,95 @@ export default function DriverDashboard() {
       setLoading(false);
     }
   };
+  const loadStats = async () => {
+  try {
+    const driver =
+      await getUser();
+
+    if (!driver?.phone)
+      return;
+
+    const querySnapshot =
+      await getDocs(
+        collection(db, "rides")
+      );
+
+    let revenue = 0;
+    let rides = 0;
+
+    querySnapshot.forEach(
+      (document) => {
+        const data =
+          document.data();
+
+        if (
+          data.driverPhone ===
+            driver.phone &&
+          data.status ===
+            "completed"
+        ) {
+          rides++;
+
+          revenue += Number(
+            data.price || 0
+          );
+        }
+      }
+    );
+
+    setTotalRevenue(
+      revenue
+    );
+
+    setTotalRides(
+      rides
+    );
+
+  } catch (error) {
+    console.log(error);
+  }
+};
+  const toggleOnlineStatus =
+  async (value) => {
+    try {
+      const user =
+        await getUser();
+
+      if (!user?.phone) return;
+
+      const q = query(
+        collection(db, "users"),
+        where("phone", "==", user.phone)
+      );
+
+      const querySnapshot =
+        await getDocs(q);
+
+      if (querySnapshot.empty)
+        return;
+
+      const driverDoc =
+        querySnapshot.docs[0];
+
+      await updateDoc(
+        driverDoc.ref,
+        {
+          isOnline: value,
+        }
+      );
+
+      setIsOnline(value);
+
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+         
         <Text style={styles.loading}>
           Chargement...
         </Text>
@@ -103,6 +210,7 @@ export default function DriverDashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
+        <DriverLocation />
         <Text style={styles.title}>
           Tableau de bord
         </Text>
@@ -144,10 +252,20 @@ export default function DriverDashboard() {
 
         <View style={styles.statusRow}>
           <Text style={styles.activeText}>
-            🟢 En ligne
+            {isOnline
+              ? "🟢 En ligne"
+              : "🔴 Hors ligne"}
           </Text>
 
-          <Switch value={true} />
+          <Switch
+            value={isOnline}
+            onValueChange={
+              toggleOnlineStatus
+            }
+            disabled={
+              !subscriptionActive
+            }
+          />
         </View>
       </View>
 
@@ -157,7 +275,7 @@ export default function DriverDashboard() {
         </Text>
 
         <Text style={styles.amount}>
-          12 500 FCFA
+          {totalRevenue} FCFA
         </Text>
       </View>
 
@@ -167,7 +285,25 @@ export default function DriverDashboard() {
         </Text>
 
         <Text style={styles.amount}>
-          8
+          {totalRides}
+        </Text>
+      </View>
+        <View style={styles.card}>
+        <Text style={styles.label}>
+          Note du conducteur
+        </Text>
+
+        <Text style={styles.amount}>
+          ⭐ {Number(averageRating).toFixed(1)}/5
+        </Text>
+
+        <Text
+          style={{
+            color: "#666",
+            marginTop: 5,
+          }}
+        >
+          {totalRatings} avis
         </Text>
       </View>
 

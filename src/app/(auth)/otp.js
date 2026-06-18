@@ -88,7 +88,7 @@ export default function Otp() {
     async () => {
       const enteredCode =
         otp.join("");
-
+console.log("Code saisi =", enteredCode);
       if (
         enteredCode !==
         "1234"
@@ -134,7 +134,8 @@ export default function Otp() {
               "driver"
                 ? 100
                 : 0,
-
+            averageRating: 0,
+            totalRatings: 0,
             createdAt:
               new Date().toISOString(),
           }
@@ -142,6 +143,7 @@ export default function Otp() {
 
         await saveUser({
           userId,
+          name: fullName,
           phone,
           role,
         });

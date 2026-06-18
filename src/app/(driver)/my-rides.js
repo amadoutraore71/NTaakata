@@ -1,22 +1,23 @@
 import {
-    useEffect,
-    useState,
+  useEffect,
+  useState,
 } from "react";
 
 import {
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import {
-    collection,
-    doc,
-    getDocs,
-    updateDoc,
+  collection,
+  doc,
+  getDocs,
+  updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
@@ -49,31 +50,35 @@ export default function MyRides() {
 
       let revenue = 0;
 
-      querySnapshot.forEach((document) => {
-        const data = document.data();
-
-        if (
-          data.driverPhone ===
-          driver.phone
-        ) {
-          myRides.push({
-            id: document.id,
-            ...data,
-          });
+      querySnapshot.forEach(
+        (document) => {
+          const data =
+            document.data();
 
           if (
-            data.status ===
-            "completed"
+            data.driverPhone ===
+            driver.phone
           ) {
-            revenue += Number(
-              data.price || 0
-            );
+            myRides.push({
+              id: document.id,
+              ...data,
+            });
+
+            if (
+              data.status ===
+              "completed"
+            ) {
+              revenue += Number(
+                data.price || 0
+              );
+            }
           }
         }
-      });
+      );
 
       setRides(myRides);
       setTotalRevenue(revenue);
+
     } catch (error) {
       console.log(error);
     }
@@ -90,28 +95,44 @@ export default function MyRides() {
         }
       );
 
-      loadRides();
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const completeRide = async (
-    rideId
-  ) => {
-    try {
-      await updateDoc(
-        doc(db, "rides", rideId),
-        {
-          status: "completed",
-        }
+      Alert.alert(
+        "Succès",
+        "Course démarrée"
       );
 
       loadRides();
+
     } catch (error) {
       console.log(error);
     }
   };
+
+  const completeRide =
+    async (rideId) => {
+      try {
+        await updateDoc(
+          doc(
+            db,
+            "rides",
+            rideId
+          ),
+          {
+            status:
+              "completed",
+          }
+        );
+
+        Alert.alert(
+          "Succès",
+          "Course terminée"
+        );
+
+        loadRides();
+
+      } catch (error) {
+        console.log(error);
+      }
+    };
 
   return (
     <SafeAreaView
@@ -121,9 +142,13 @@ export default function MyRides() {
         Mes Courses
       </Text>
 
-      <View style={styles.revenueCard}>
+      <View
+        style={styles.revenueCard}
+      >
         <Text
-          style={styles.revenueLabel}
+          style={
+            styles.revenueLabel
+          }
         >
           Revenus totaux
         </Text>
@@ -131,7 +156,9 @@ export default function MyRides() {
         <Text
           style={styles.revenue}
         >
-          {totalRevenue} FCFA
+          {totalRevenue}
+          {" "}
+          FCFA
         </Text>
       </View>
 
@@ -141,7 +168,9 @@ export default function MyRides() {
         }
       >
         {rides.length === 0 ? (
-          <Text style={styles.empty}>
+          <Text
+            style={styles.empty}
+          >
             Aucune course
           </Text>
         ) : (
@@ -150,37 +179,91 @@ export default function MyRides() {
               key={ride.id}
               style={styles.card}
             >
+              <Text style={styles.route}>
+  📅 {
+    ride.createdAt
+      ? new Date(
+          ride.createdAt
+        ).toLocaleDateString()
+      : "-"
+  }
+</Text>
               <Text
-                style={styles.route}
+  style={styles.route}
+>
+  👤 {
+    ride.passengerName ||
+    "Passager"
+  }
+</Text>
+
+<Text
+  style={styles.route}
+>
+  📞 {
+    ride.passengerPhone ||
+    "Non disponible"
+  }
+</Text>
+              <Text
+                style={
+                  styles.route
+                }
               >
-                📍 {ride.pickup}
+                📍{" "}
+                {ride.pickup}
               </Text>
 
               <Text
-                style={styles.route}
+                style={
+                  styles.route
+                }
               >
-                🎯 {ride.destination}
+                🎯{" "}
+                {
+                  ride.destination
+                }
               </Text>
 
               <Text
-                style={styles.price}
+                style={
+                  styles.price
+                }
               >
-                💰 {ride.price} FCFA
+                💰{" "}
+                {ride.price}
+                {" "}
+                FCFA
               </Text>
+              <Text
+              style={styles.route}
+            >
+              📅 {
+                ride.createdAt
+                  ? new Date(
+                      ride.createdAt
+                    ).toLocaleDateString()
+                  : "-"
+              }
+            </Text>
 
               <Text
-                style={styles.status}
+                style={
+                  styles.status
+                }
               >
                 🚕 Statut :
                 {" "}
-                {ride.status}
+                {
+                  ride.status
+                }
               </Text>
 
               {ride.status ===
                 "accepted" && (
                 <TouchableOpacity
                   style={
-                    styles.actionButton
+                    styles.startButton
                   }
                   onPress={() =>
                     startRide(
@@ -190,7 +273,7 @@ export default function MyRides() {
                 >
                   <Text
                     style={
-                      styles.actionText
+                      styles.buttonText
                     }
                   >
                     Démarrer la course
@@ -202,7 +285,7 @@ export default function MyRides() {
                 "in_progress" && (
                 <TouchableOpacity
                   style={
-                    styles.actionButton
+                    styles.completeButton
                   }
                   onPress={() =>
                     completeRide(
@@ -212,7 +295,7 @@ export default function MyRides() {
                 >
                   <Text
                     style={
-                      styles.actionText
+                      styles.buttonText
                     }
                   >
                     Terminer la course
@@ -232,7 +315,8 @@ export default function MyRides() {
                       styles.completedText
                     }
                   >
-                    ✅ Course terminée
+                    ✅ Course
+                    terminée
                   </Text>
                 </View>
               )}
@@ -311,16 +395,26 @@ const styles =
       fontWeight: "600",
     },
 
-    actionButton: {
+    startButton: {
       backgroundColor:
         "#F4C300",
-      marginTop: 15,
       padding: 12,
       borderRadius: 10,
       alignItems: "center",
+      marginTop: 15,
     },
 
-    actionText: {
+    completeButton: {
+      backgroundColor:
+        "#0B6E4F",
+      padding: 12,
+      borderRadius: 10,
+      alignItems: "center",
+      marginTop: 15,
+    },
+
+    buttonText: {
+      color: "#FFFFFF",
       fontWeight: "bold",
       fontSize: 16,
     },
