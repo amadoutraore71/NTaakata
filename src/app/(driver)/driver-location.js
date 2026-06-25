@@ -72,21 +72,21 @@ export default function DriverLocation() {
 
             const driverDoc =
               snapshot.docs[0];
-await updateDoc(
-  driverDoc.ref,
-  {
-    latitude:
-      location.coords.latitude,
+            await updateDoc(
+              driverDoc.ref,
+              {
+                latitude:
+                  location.coords.latitude,
 
-    longitude:
-      location.coords.longitude,
+                longitude:
+                  location.coords.longitude,
 
-    isOnline: true,
+                isOnline: true,
 
-    lastLocationUpdate:
-      new Date().toISOString(),
-  }
-);
+                lastLocationUpdate:
+                  new Date().toISOString(),
+              }
+            );
             console.log(
               "Position envoyée :",
               location.coords.latitude,

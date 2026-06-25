@@ -83,16 +83,16 @@ export default function Users() {
 
               {user.role ===
                 "driver" && (
-                <Text
-                  style={styles.info}
-                >
-                  💰 Abonnement :
-                  {" "}
-                  {user.subscriptionActive
-                    ? "Actif"
-                    : "Inactif"}
-                </Text>
-              )}
+                  <Text
+                    style={styles.info}
+                  >
+                    💰 Abonnement :
+                    {" "}
+                    {user.subscriptionActive
+                      ? "Actif"
+                      : "Inactif"}
+                  </Text>
+                )}
             </View>
           ))
         )}

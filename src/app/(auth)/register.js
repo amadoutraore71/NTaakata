@@ -17,11 +17,28 @@ import {
   useLocalSearchParams,
 } from "expo-router";
 
- 
+
 
 export default function Register() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [vehicleType, setVehicleType] =
+    useState("");
+
+  const [vehicleBrand, setVehicleBrand] =
+    useState("");
+
+  const [vehicleModel, setVehicleModel] =
+    useState("");
+
+  const [vehicleColor, setVehicleColor] =
+    useState("");
+
+  const [plateNumber, setPlateNumber] =
+    useState("");
+
+  const [seats, setSeats] =
+    useState("");
   const { role } = useLocalSearchParams();
   console.log("ROLE REGISTER =", role);
 
@@ -43,21 +60,92 @@ export default function Register() {
     }
 
     if (phone.length < 8) {
-      Alert.alert(
-        "Erreur",
-        "Numéro de téléphone invalide"
-      );
-      return;
-    }
+  Alert.alert(
+    "Erreur",
+    "Numéro de téléphone invalide"
+  );
+  return;
+}
 
-router.push({
-  pathname: "/(auth)/otp",
-  params: {
-    fullName,
-    phone,
-    role,
-  },
-});
+ if (
+  role === "driver" &&
+  !vehicleType
+) {
+  Alert.alert(
+    "Erreur",
+    "Choisissez un type de véhicule"
+  );
+  return;
+}
+
+if (
+  role === "driver" &&
+  !vehicleBrand.trim()
+) {
+  Alert.alert(
+    "Erreur",
+    "Veuillez saisir la marque du véhicule"
+  );
+  return;
+}
+
+if (
+  role === "driver" &&
+  !vehicleColor.trim()
+) {
+  Alert.alert(
+    "Erreur",
+    "Veuillez saisir la couleur du véhicule"
+  );
+  return;
+}
+
+if (
+  role === "driver" &&
+  !plateNumber.trim()
+) {
+  Alert.alert(
+    "Erreur",
+    "Veuillez saisir l'immatriculation"
+  );
+  return;
+}
+
+if (
+  vehicleType === "voiture" &&
+  !vehicleModel.trim()
+) {
+  Alert.alert(
+    "Erreur",
+    "Veuillez saisir le modèle"
+  );
+  return;
+}
+
+if (
+  vehicleType === "voiture" &&
+  !seats.trim()
+) {
+  Alert.alert(
+    "Erreur",
+    "Veuillez saisir le nombre de places"
+  );
+  return;
+}
+    router.push({
+      pathname: "/(auth)/otp",
+      params: {
+        fullName,
+        phone,
+        role,
+        vehicleType,
+        vehicleBrand,
+        vehicleModel,
+        vehicleColor,
+        plateNumber,
+        seats,
+      },
+    });
   };
 
   return (
@@ -99,7 +187,148 @@ router.push({
           value={phone}
           onChangeText={setPhone}
         />
+        {role === "driver" && (
+          <>
+            <Text
+              style={{
+                marginLeft: 25,
+                marginBottom: 10,
+                fontWeight: "bold",
+              }}
+            >
+              Type de véhicule
+            </Text>
 
+            <View
+              style={{
+                flexDirection: "row",
+                marginHorizontal: 25,
+                marginBottom: 15,
+              }}
+            >
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor:
+                    vehicleType === "moto"
+                      ? "#0B6E4F"
+                      : "#E5E5E5",
+                  padding: 15,
+                  borderRadius: 10,
+                  marginRight: 5,
+                  alignItems: "center",
+                }}
+                onPress={() =>
+                  setVehicleType("moto")
+                }
+              >
+                <Text
+                  style={{
+                    color:
+                      vehicleType === "moto"
+                        ? "#FFF"
+                        : "#000",
+                  }}
+                >
+                  🏍️ Moto
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  backgroundColor:
+                    vehicleType === "voiture"
+                      ? "#0B6E4F"
+                      : "#E5E5E5",
+                  padding: 15,
+                  borderRadius: 10,
+                  marginLeft: 5,
+                  alignItems: "center",
+                }}
+                onPress={() =>
+                  setVehicleType("voiture")
+                }
+              >
+                <Text
+                  style={{
+                    color:
+                      vehicleType === "voiture"
+                        ? "#FFF"
+                        : "#000",
+                  }}
+                >
+                  🚗 Voiture
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {vehicleType === "moto" && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Marque de la moto"
+                  value={vehicleBrand}
+                  onChangeText={setVehicleBrand}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Couleur de la moto"
+                  value={vehicleColor}
+                  onChangeText={setVehicleColor}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Immatriculation"
+                  value={plateNumber}
+                  onChangeText={setPlateNumber}
+                />
+              </>
+            )}
+
+            {vehicleType === "voiture" && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Marque de la voiture"
+                  value={vehicleBrand}
+                  onChangeText={setVehicleBrand}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Modèle"
+                  value={vehicleModel}
+                  onChangeText={setVehicleModel}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Couleur"
+                  value={vehicleColor}
+                  onChangeText={setVehicleColor}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre de places"
+                  keyboardType="numeric"
+                  value={seats}
+                  onChangeText={setSeats}
+                />
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="Immatriculation"
+                  value={plateNumber}
+                  onChangeText={setPlateNumber}
+                />
+              </>
+            )}
+          </>
+        )}
         <TouchableOpacity
           style={styles.registerButton}
           onPress={handleRegister}

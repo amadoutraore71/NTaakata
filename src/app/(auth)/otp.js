@@ -31,6 +31,12 @@ export default function Otp() {
     fullName,
     phone,
     role,
+    vehicleType,
+    vehicleBrand,
+    vehicleModel,
+    vehicleColor,
+    plateNumber,
+    seats,
   } = useLocalSearchParams();
 
   const [otp, setOtp] =
@@ -88,7 +94,7 @@ export default function Otp() {
     async () => {
       const enteredCode =
         otp.join("");
-console.log("Code saisi =", enteredCode);
+      console.log("Code saisi =", enteredCode);
       if (
         enteredCode !==
         "1234"
@@ -111,15 +117,33 @@ console.log("Code saisi =", enteredCode);
             userId
           ),
           {
+
             name: fullName,
 
             phone: phone,
 
             role: role,
 
+            vehicleType:
+              vehicleType || null,
+
+            vehicleBrand:
+              vehicleBrand || null,
+
+            vehicleModel:
+              vehicleModel || null,
+
+            vehicleColor:
+              vehicleColor || null,
+
+            plateNumber:
+              plateNumber || null,
+
+            seats:
+              seats || null,
             subscriptionActive:
               role ===
-              "driver"
+                "driver"
                 ? false
                 : true,
 
@@ -131,7 +155,7 @@ console.log("Code saisi =", enteredCode);
 
             dailyFee:
               role ===
-              "driver"
+                "driver"
                 ? 100
                 : 0,
             averageRating: 0,
@@ -140,12 +164,29 @@ console.log("Code saisi =", enteredCode);
               new Date().toISOString(),
           }
         );
-
+        console.log({
+          userId,
+          name: fullName,
+          phone,
+          role,
+          vehicleType,
+          vehicleBrand,
+          vehicleModel,
+          vehicleColor,
+          plateNumber,
+          seats,
+        });
         await saveUser({
           userId,
           name: fullName,
           phone,
           role,
+          vehicleType,
+          vehicleBrand,
+          vehicleModel,
+          vehicleColor,
+          plateNumber,
+          seats,
         });
 
         Alert.alert(

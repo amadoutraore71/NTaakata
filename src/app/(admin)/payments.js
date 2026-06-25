@@ -1,19 +1,19 @@
 import {
-    useEffect,
-    useState,
+  useEffect,
+  useState,
 } from "react";
 
 import {
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import {
-    collection,
-    getDocs,
+  collection,
+  getDocs,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
@@ -96,7 +96,7 @@ export default function Payments() {
 
       setTotalRevenue(
         subscriptions +
-          commissions
+        commissions
       );
     } catch (error) {
       console.log(error);

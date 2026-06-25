@@ -54,7 +54,7 @@ export default function SearchRide() {
           style={[
             styles.vehicleButton,
             vehicleType === "moto" &&
-              styles.selectedVehicle,
+            styles.selectedVehicle,
           ]}
           onPress={() =>
             setVehicleType("moto")
@@ -69,7 +69,7 @@ export default function SearchRide() {
           style={[
             styles.vehicleButton,
             vehicleType === "voiture" &&
-              styles.selectedVehicle,
+            styles.selectedVehicle,
           ]}
           onPress={() =>
             setVehicleType("voiture")

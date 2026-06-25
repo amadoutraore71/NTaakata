@@ -41,7 +41,8 @@ export default function PassengerHome() {
     destination,
     setDestination,
   ] = useState("");
-
+  const [vehicleType, setVehicleType] =
+    useState("moto");
   const handleRideRequest =
     async () => {
       try {
@@ -67,28 +68,28 @@ export default function PassengerHome() {
             destination
           );
 
-await addDoc(
-  collection(db, "rides"),
-  {
-    pickup,
-    destination,
+        await addDoc(
+          collection(db, "rides"),
+          {
+            pickup,
+            destination,
+            vehicleType,
+            passengerName:
+              user?.name || "",
 
-    passengerName:
-      user?.name || "",
+            passengerPhone:
+              user?.phone || "",
 
-    passengerPhone:
-      user?.phone || "",
+            distance,
 
-    distance,
+            price,
 
-    price,
+            status: "pending",
 
-    status: "pending",
-
-    createdAt:
-      new Date().toISOString(),
-  }
-);
+            createdAt:
+              new Date().toISOString(),
+          }
+        );
 
         Alert.alert(
           "Succès",
@@ -129,9 +130,12 @@ await addDoc(
       </View>
 
       <View style={styles.card}>
-        <Text
-          style={styles.label}
-        >
+
+
+
+
+
+        <Text style={styles.label}>
           📍 Point de départ
         </Text>
 
@@ -139,14 +143,10 @@ await addDoc(
           style={styles.input}
           placeholder="Ex: Sogoniko"
           value={pickup}
-          onChangeText={
-            setPickup
-          }
+          onChangeText={setPickup}
         />
 
-        <Text
-          style={styles.label}
-        >
+        <Text style={styles.label}>
           🎯 Destination
         </Text>
 
@@ -154,10 +154,75 @@ await addDoc(
           style={styles.input}
           placeholder="Ex: Kalaban Coura"
           value={destination}
-          onChangeText={
-            setDestination
-          }
+          onChangeText={setDestination}
         />
+        <Text style={styles.label}>
+          🚕 Type de transport
+        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            marginTop: 10,
+            marginBottom: 15,
+          }}
+        >
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor:
+                vehicleType === "moto"
+                  ? "#0B6E4F"
+                  : "#E5E5E5",
+              padding: 15,
+              borderRadius: 10,
+              marginRight: 5,
+              alignItems: "center",
+            }}
+            onPress={() =>
+              setVehicleType("moto")
+            }
+          >
+            <Text
+              style={{
+                color:
+                  vehicleType === "moto"
+                    ? "#FFF"
+                    : "#000",
+              }}
+            >
+              🏍️ Moto
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor:
+                vehicleType === "voiture"
+                  ? "#0B6E4F"
+                  : "#E5E5E5",
+              padding: 15,
+              borderRadius: 10,
+              marginLeft: 5,
+              alignItems: "center",
+            }}
+            onPress={() =>
+              setVehicleType("voiture")
+            }
+          >
+            <Text
+              style={{
+                color:
+                  vehicleType === "voiture"
+                    ? "#FFF"
+                    : "#000",
+              }}
+            >
+              🚗 Voiture
+            </Text>
+          </TouchableOpacity>
+        </View>
+
 
         <View
           style={
@@ -233,33 +298,33 @@ await addDoc(
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-            style={styles.historyButton}
-            onPress={() =>
-              router.push(
-                "/(passenger)/drivers-nearby"
-              )
-            }
+          style={styles.historyButton}
+          onPress={() =>
+            router.push(
+              "/(passenger)/drivers-nearby"
+            )
+          }
+        >
+          <Text
+            style={styles.historyText}
           >
-            <Text
-              style={styles.historyText}
-            >
-              Conducteurs disponibles
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-  style={styles.historyButton}
-  onPress={() =>
-    router.push(
-      "/(passenger)/drivers-map"
-    )
-  }
->
-  <Text
-    style={styles.historyText}
-  >
-    Voir la carte
-  </Text>
-</TouchableOpacity>
+            Conducteurs disponibles
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.historyButton}
+          onPress={() =>
+            router.push(
+              "/(passenger)/drivers-map"
+            )
+          }
+        >
+          <Text
+            style={styles.historyText}
+          >
+            Voir la carte
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );

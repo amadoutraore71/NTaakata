@@ -1,20 +1,20 @@
 import {
-    useEffect,
-    useState,
+  useEffect,
+  useState,
 } from "react";
 
 import {
-    ActivityIndicator,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import {
-    collection,
-    getDocs,
+  collection,
+  getDocs,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
@@ -48,7 +48,7 @@ export default function DriversNearby() {
             data.role === "driver" &&
             data.subscriptionActive === true &&
             data.isOnline === true
-            ) {
+          ) {
             availableDrivers.push({
               id: document.id,
               ...data,
@@ -114,7 +114,7 @@ export default function DriversNearby() {
                   📞 {driver.phone}
                 </Text>
                 <Text style={styles.info}>
-                🟢 Disponible
+                  🟢 Disponible
                 </Text>
                 <Text
                   style={styles.info}

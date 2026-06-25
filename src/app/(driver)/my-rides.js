@@ -180,31 +180,31 @@ export default function MyRides() {
               style={styles.card}
             >
               <Text style={styles.route}>
-  📅 {
-    ride.createdAt
-      ? new Date(
-          ride.createdAt
-        ).toLocaleDateString()
-      : "-"
-  }
-</Text>
+                📅 {
+                  ride.createdAt
+                    ? new Date(
+                      ride.createdAt
+                    ).toLocaleDateString()
+                    : "-"
+                }
+              </Text>
               <Text
-  style={styles.route}
->
-  👤 {
-    ride.passengerName ||
-    "Passager"
-  }
-</Text>
+                style={styles.route}
+              >
+                👤 {
+                  ride.passengerName ||
+                  "Passager"
+                }
+              </Text>
 
-<Text
-  style={styles.route}
->
-  📞 {
-    ride.passengerPhone ||
-    "Non disponible"
-  }
-</Text>
+              <Text
+                style={styles.route}
+              >
+                📞 {
+                  ride.passengerPhone ||
+                  "Non disponible"
+                }
+              </Text>
               <Text
                 style={
                   styles.route
@@ -236,16 +236,16 @@ export default function MyRides() {
                 FCFA
               </Text>
               <Text
-              style={styles.route}
-            >
-              📅 {
-                ride.createdAt
-                  ? new Date(
+                style={styles.route}
+              >
+                📅 {
+                  ride.createdAt
+                    ? new Date(
                       ride.createdAt
                     ).toLocaleDateString()
-                  : "-"
-              }
-            </Text>
+                    : "-"
+                }
+              </Text>
 
               <Text
                 style={
@@ -261,65 +261,65 @@ export default function MyRides() {
 
               {ride.status ===
                 "accepted" && (
-                <TouchableOpacity
-                  style={
-                    styles.startButton
-                  }
-                  onPress={() =>
-                    startRide(
-                      ride.id
-                    )
-                  }
-                >
-                  <Text
+                  <TouchableOpacity
                     style={
-                      styles.buttonText
+                      styles.startButton
+                    }
+                    onPress={() =>
+                      startRide(
+                        ride.id
+                      )
                     }
                   >
-                    Démarrer la course
-                  </Text>
-                </TouchableOpacity>
-              )}
+                    <Text
+                      style={
+                        styles.buttonText
+                      }
+                    >
+                      Démarrer la course
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
               {ride.status ===
                 "in_progress" && (
-                <TouchableOpacity
-                  style={
-                    styles.completeButton
-                  }
-                  onPress={() =>
-                    completeRide(
-                      ride.id
-                    )
-                  }
-                >
-                  <Text
+                  <TouchableOpacity
                     style={
-                      styles.buttonText
+                      styles.completeButton
+                    }
+                    onPress={() =>
+                      completeRide(
+                        ride.id
+                      )
                     }
                   >
-                    Terminer la course
-                  </Text>
-                </TouchableOpacity>
-              )}
+                    <Text
+                      style={
+                        styles.buttonText
+                      }
+                    >
+                      Terminer la course
+                    </Text>
+                  </TouchableOpacity>
+                )}
 
               {ride.status ===
                 "completed" && (
-                <View
-                  style={
-                    styles.completedBadge
-                  }
-                >
-                  <Text
+                  <View
                     style={
-                      styles.completedText
+                      styles.completedBadge
                     }
                   >
-                    ✅ Course
-                    terminée
-                  </Text>
-                </View>
-              )}
+                    <Text
+                      style={
+                        styles.completedText
+                      }
+                    >
+                      ✅ Course
+                      terminée
+                    </Text>
+                  </View>
+                )}
             </View>
           ))
         )}

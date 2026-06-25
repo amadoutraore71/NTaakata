@@ -46,7 +46,7 @@ export default function Payment() {
         style={[
           styles.paymentCard,
           selectedMethod === "orange" &&
-            styles.selectedCard,
+          styles.selectedCard,
         ]}
         onPress={() =>
           setSelectedMethod("orange")
@@ -62,7 +62,7 @@ export default function Payment() {
         style={[
           styles.paymentCard,
           selectedMethod === "moov" &&
-            styles.selectedCard,
+          styles.selectedCard,
         ]}
         onPress={() =>
           setSelectedMethod("moov")
@@ -78,7 +78,7 @@ export default function Payment() {
         style={[
           styles.paymentCard,
           selectedMethod === "cash" &&
-            styles.selectedCard,
+          styles.selectedCard,
         ]}
         onPress={() =>
           setSelectedMethod("cash")

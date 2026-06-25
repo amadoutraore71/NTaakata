@@ -2,6 +2,12 @@ import {
   router,
   useLocalSearchParams,
 } from "expo-router";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { useRef, useState } from "react";
 import {
   Alert,
@@ -13,6 +19,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import { db } from "../../../firebase/config";
 import { saveUser } from "../../storage/userStorage";
 export default function OtpLogin() {
   const { phone, role } =
@@ -44,10 +52,10 @@ export default function OtpLogin() {
     if (value && index === 2)
       input4.current?.focus();
   };
-
-  const verifyCode =  async() => {
+  const verifyCode = async () => {
     const enteredCode = otp.join("");
 
+    // Vérification OTP
     if (enteredCode !== "1234") {
       Alert.alert(
         "Erreur",
@@ -56,44 +64,118 @@ export default function OtpLogin() {
       return;
     }
 
-    if (role === "passenger") {
-      await saveUser({
-          phone,
-          role,
+    try {
+      // Recherche de l'utilisateur
+      const userQuery = query(
+        collection(db, "users"),
+        where("phone", "==", phone)
+      );
+
+      const snapshot = await getDocs(userQuery);
+
+      if (snapshot.empty) {
+        Alert.alert(
+          "Erreur",
+          "Utilisateur introuvable"
+        );
+        return;
+      }
+
+      let user = null;
+
+      snapshot.forEach((doc) => {
+        user = {
+          userId: doc.id,
+          ...doc.data(),
+        };
+      });
+
+      console.log("Utilisateur connecté :", user);
+
+      // Sauvegarde locale
+      await saveUser(user);
+
+      // ===========================
+      // PASSAGER
+      // ===========================
+      if (user.role === "passenger") {
+        const rideQuery = query(
+          collection(db, "rides"),
+          where(
+            "passengerPhone",
+            "==",
+            user.phone
+          )
+        );
+
+        const rideSnapshot =
+          await getDocs(rideQuery);
+
+        let activeRide = null;
+        rideSnapshot.forEach((doc) => {
+          const ride = {
+            id: doc.id,
+            ...doc.data(),
+          };
+
+          if (
+            ride.status === "pending" ||
+            ride.status === "accepted" ||
+            ride.status === "started"
+          ) {
+            activeRide = ride;
+          }
         });
-      router.replace(
-        
-        "/(passenger)/home"
-      );
-      return;
-    }
 
-    if (role === "driver") {
-        await saveUser({
-        phone,
-        role,
-      });
-      router.replace(
-        "/(driver)/dashboard"
-      );
-      return;
-    }
+        if (activeRide) {
+          router.replace({
+            pathname: "/(passenger)/ride-status",
+            params: {
+              rideId: activeRide.id,
+            },
+          });
+        } else {
+          router.replace(
+            "/(passenger)/home"
+          );
+        }
 
-    if (role === "admin") {
-       await saveUser({
-        phone,
-        role,
-      });
-      router.replace(
-        "/(admin)/dashboard"
-      );
-      return;
-    }
+        return;
+      }
 
-    Alert.alert(
-      "Erreur",
-      "Rôle utilisateur inconnu"
-    );
+      // ===========================
+      // CONDUCTEUR
+      // ===========================
+      if (user.role === "driver") {
+        router.replace(
+          "/(driver)/dashboard"
+        );
+        return;
+      }
+
+      // ===========================
+      // ADMIN
+      // ===========================
+      if (user.role === "admin") {
+        router.replace(
+          "/(admin)/dashboard"
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Erreur",
+        "Rôle utilisateur inconnu"
+      );
+
+    } catch (error) {
+      console.log(error);
+
+      Alert.alert(
+        "Erreur",
+        "Impossible de se connecter"
+      );
+    }
   };
 
   return (

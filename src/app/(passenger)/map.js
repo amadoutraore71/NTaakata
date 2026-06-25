@@ -20,15 +20,15 @@ export default function MapScreen() {
       </Text>
 
       <MapView
-  style={{ flex: 1 }}
-  mapType="satellite"
-  initialRegion={{
-    latitude: 12.6392,
-    longitude: -8.0029,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  }}
-/>
+        style={{ flex: 1 }}
+        mapType="satellite"
+        initialRegion={{
+          latitude: 12.6392,
+          longitude: -8.0029,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
+      />
     </View>
   );
 }

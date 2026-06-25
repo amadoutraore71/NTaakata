@@ -31,22 +31,22 @@ export default function DriverDashboard() {
     useState(true);
 
   useEffect(() => {
-  checkSubscription();
-  loadStats();
-}, []);
- 
+    checkSubscription();
+    loadStats();
+  }, []);
 
-const [isOnline, setIsOnline] =
-  useState(false);
-const [totalRevenue, setTotalRevenue] =
-  useState(0);
-const [averageRating, setAverageRating] =
-  useState(0);
 
-const [totalRatings, setTotalRatings] =
-  useState(0);
-const [totalRides, setTotalRides] =
-  useState(0);
+  const [isOnline, setIsOnline] =
+    useState(false);
+  const [totalRevenue, setTotalRevenue] =
+    useState(0);
+  const [averageRating, setAverageRating] =
+    useState(0);
+
+  const [totalRatings, setTotalRatings] =
+    useState(0);
+  const [totalRides, setTotalRides] =
+    useState(0);
   const checkSubscription = async () => {
     try {
       const user = await getUser();
@@ -74,7 +74,7 @@ const [totalRides, setTotalRides] =
 
       const data =
         driverDoc.data();
-        setAverageRating(
+      setAverageRating(
         data.averageRating || 0
       );
 
@@ -112,94 +112,94 @@ const [totalRides, setTotalRides] =
     }
   };
   const loadStats = async () => {
-  try {
-    const driver =
-      await getUser();
-
-    if (!driver?.phone)
-      return;
-
-    const querySnapshot =
-      await getDocs(
-        collection(db, "rides")
-      );
-
-    let revenue = 0;
-    let rides = 0;
-
-    querySnapshot.forEach(
-      (document) => {
-        const data =
-          document.data();
-
-        if (
-          data.driverPhone ===
-            driver.phone &&
-          data.status ===
-            "completed"
-        ) {
-          rides++;
-
-          revenue += Number(
-            data.price || 0
-          );
-        }
-      }
-    );
-
-    setTotalRevenue(
-      revenue
-    );
-
-    setTotalRides(
-      rides
-    );
-
-  } catch (error) {
-    console.log(error);
-  }
-};
-  const toggleOnlineStatus =
-  async (value) => {
     try {
-      const user =
+      const driver =
         await getUser();
 
-      if (!user?.phone) return;
-
-      const q = query(
-        collection(db, "users"),
-        where("phone", "==", user.phone)
-      );
-
-      const querySnapshot =
-        await getDocs(q);
-
-      if (querySnapshot.empty)
+      if (!driver?.phone)
         return;
 
-      const driverDoc =
-        querySnapshot.docs[0];
+      const querySnapshot =
+        await getDocs(
+          collection(db, "rides")
+        );
 
-      await updateDoc(
-        driverDoc.ref,
-        {
-          isOnline: value,
+      let revenue = 0;
+      let rides = 0;
+
+      querySnapshot.forEach(
+        (document) => {
+          const data =
+            document.data();
+
+          if (
+            data.driverPhone ===
+            driver.phone &&
+            data.status ===
+            "completed"
+          ) {
+            rides++;
+
+            revenue += Number(
+              data.price || 0
+            );
+          }
         }
       );
 
-      setIsOnline(value);
+      setTotalRevenue(
+        revenue
+      );
+
+      setTotalRides(
+        rides
+      );
 
     } catch (error) {
       console.log(error);
     }
   };
+  const toggleOnlineStatus =
+    async (value) => {
+      try {
+        const user =
+          await getUser();
+
+        if (!user?.phone) return;
+
+        const q = query(
+          collection(db, "users"),
+          where("phone", "==", user.phone)
+        );
+
+        const querySnapshot =
+          await getDocs(q);
+
+        if (querySnapshot.empty)
+          return;
+
+        const driverDoc =
+          querySnapshot.docs[0];
+
+        await updateDoc(
+          driverDoc.ref,
+          {
+            isOnline: value,
+          }
+        );
+
+        setIsOnline(value);
+
+      } catch (error) {
+        console.log(error);
+      }
+    };
 
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-         
+
         <Text style={styles.loading}>
           Chargement...
         </Text>
@@ -288,7 +288,7 @@ const [totalRides, setTotalRides] =
           {totalRides}
         </Text>
       </View>
-        <View style={styles.card}>
+      <View style={styles.card}>
         <Text style={styles.label}>
           Note du conducteur
         </Text>

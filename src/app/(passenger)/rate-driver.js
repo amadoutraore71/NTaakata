@@ -1,175 +1,112 @@
+import { useState } from "react";
 import {
   Alert,
   SafeAreaView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 
-import {
-  router,
-  useLocalSearchParams
-} from "expo-router";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-
-import { db } from "../../../firebase/config";
 export default function RateDriver() {
-const {
-  driverPhone,
-  driverName,
-  rideId,
-} = useLocalSearchParams();
- const submitRating = async (
-  rating
-) => {
-  try {
-    const q = query(
-      collection(db, "users"),
-      where(
-        "phone",
-        "==",
-        driverPhone
-      )
-    );
+  const [rating, setRating] =
+    useState(0);
 
-    const snapshot =
-      await getDocs(q);
-
-    if (snapshot.empty) {
+  const submitRating = async () => {
+    if (rating === 0) {
       Alert.alert(
         "Erreur",
-        "Conducteur introuvable"
+        "Choisissez une note"
       );
       return;
     }
 
-    const driverDoc =
-      snapshot.docs[0];
-
-    const data =
-      driverDoc.data();
-
-    const oldAverage =
-      data.averageRating || 0;
-
-    const oldTotal =
-      data.totalRatings || 0;
-
-    const newTotal =
-      oldTotal + 1;
-
-    const newAverage =
-      (
-        oldAverage *
-          oldTotal +
-        rating
-      ) / newTotal;
-
-    await updateDoc(
-      driverDoc.ref,
-      {
-        averageRating:
-          Number(
-            newAverage.toFixed(
-              1
-            )
-          ),
-
-        totalRatings:
-          newTotal,
-      }
-    );
-
-    await updateDoc(
-      doc(
-        db,
-        "rides",
-        rideId
-      ),
-      {
-        ratingSubmitted:
-          true,
-
-        driverRating:
-          rating,
-          archived: true,
-      }
-    );
-
     Alert.alert(
       "Merci",
-      "Votre note a été enregistrée"
+      `Vous avez donné ${rating} étoile(s)`
     );
-
-    router.replace(
-      "/(passenger)/home"
-    );
-  } catch (error) {
-    console.log(error);
-
-    Alert.alert(
-      "Erreur",
-      "Impossible d'enregistrer la note"
-    );
-  }
-};
+  };
 
   return (
-    <SafeAreaView
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 28,
-          fontWeight: "bold",
-        }}
-      >
-        Noter votre chauffeur
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.title}>
+        Noter le conducteur
       </Text>
-        <Text
-        style={{
-            marginTop: 20,
-            fontSize: 16,
-        }}
-        >
-      Chauffeur : {driverName}
-        </Text>
-      <View
-        style={{
-          flexDirection: "row",
-          marginTop: 30,
-        }}
-      >
+
+      <Text style={styles.subtitle}>
+        Comment s'est passée votre course ?
+      </Text>
+
+      <View style={styles.stars}>
         {[1, 2, 3, 4, 5].map(
           (star) => (
             <TouchableOpacity
               key={star}
               onPress={() =>
-                submitRating(star)
+                setRating(star)
               }
             >
               <Text
                 style={{
-                  fontSize: 50,
+                  fontSize: 45,
                 }}
               >
-                ⭐
+                {star <= rating
+                  ? "⭐"
+                  : "☆"}
               </Text>
             </TouchableOpacity>
           )
         )}
       </View>
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={submitRating}
+      >
+        <Text style={styles.buttonText}>
+          Envoyer
+        </Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#0B6E4F",
+  },
+
+  subtitle: {
+    marginTop: 10,
+    color: "#666",
+  },
+
+  stars: {
+    flexDirection: "row",
+    marginVertical: 40,
+  },
+
+  button: {
+    backgroundColor: "#0B6E4F",
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 10,
+  },
+
+  buttonText: {
+    color: "#FFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+});

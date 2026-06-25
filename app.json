@@ -35,13 +35,12 @@
           }
         }
       ],
-       [
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "N'Taakata utilise votre position pour trouver les conducteurs à proximité."
         }
       ]
-     
     ],
     "experiments": {
       "typedRoutes": true,
