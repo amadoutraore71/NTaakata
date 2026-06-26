@@ -21,7 +21,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../../firebase/config";
-
+import AppHeader from "../../components/AppHeader";
 import { getUser } from "../../storage/userStorage";
 
 export default function Requests() {
@@ -225,11 +225,13 @@ export default function Requests() {
 
   return (
     <SafeAreaView
+
       style={styles.container}
     >
-      <Text style={styles.title}>
-        Demandes de courses
-      </Text>
+      <AppHeader
+        title="Demandes de courses"
+        profileRoute="/(driver)/profile"
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={

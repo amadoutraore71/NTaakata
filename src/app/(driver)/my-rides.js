@@ -4,6 +4,12 @@ import {
 } from "react";
 
 import {
+  collection,
+  doc,
+  getDocs,
+  updateDoc,
+} from "firebase/firestore";
+import {
   Alert,
   SafeAreaView,
   ScrollView,
@@ -12,13 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import {
-  collection,
-  doc,
-  getDocs,
-  updateDoc,
-} from "firebase/firestore";
+import Header from "../../components/Header";
 
 import { db } from "../../../firebase/config";
 import { getUser } from "../../storage/userStorage";
@@ -137,7 +137,10 @@ export default function MyRides() {
   return (
     <SafeAreaView
       style={styles.container}
-    >
+    ><Header
+  title="Accueil"
+  profileRoute="/(passenger)/profile"
+/>
       <Text style={styles.title}>
         Mes Courses
       </Text>

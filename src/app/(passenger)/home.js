@@ -23,8 +23,8 @@ import {
 
 import { db } from "../../../firebase/config";
 
+import AppHeader from "../../components/AppHeader";
 import LogoutButton from "../../components/LogoutButton";
-
 import {
   getUser,
 } from "../../storage/userStorage";
@@ -120,12 +120,10 @@ export default function PassengerHome() {
       <View
         style={styles.header}
       >
-        <Text
-          style={styles.title}
-        >
-          Commander une course
-        </Text>
-
+        <AppHeader
+          title="Commander une course"
+          profileRoute="/(driver)/profile"
+        />
         <LogoutButton />
       </View>
 

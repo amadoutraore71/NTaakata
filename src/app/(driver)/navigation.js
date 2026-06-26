@@ -5,10 +5,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
 import MapView, {
   Marker,
 } from "react-native-maps";
+import Header from "../../components/Header";
 
 export default function DriverNavigation() {
   const [rideStatus, setRideStatus] =
@@ -26,6 +26,10 @@ export default function DriverNavigation() {
 
   return (
     <View style={styles.container}>
+      <Header
+        title="Accueil"
+        profileRoute="/(passenger)/profile"
+      />
       {/* Carte */}
       <MapView
         style={styles.map}

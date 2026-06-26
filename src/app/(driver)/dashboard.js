@@ -17,9 +17,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-
 import { db } from "../../../firebase/config";
-import LogoutButton from "../../components/LogoutButton";
+import AppHeader from "../../components/AppHeader";
 import { getUser } from "../../storage/userStorage";
 import { isSubscriptionValid } from "../../utils/subscriptionChecker";
 import DriverLocation from "./driver-location";
@@ -209,14 +208,13 @@ export default function DriverDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <DriverLocation />
-        <Text style={styles.title}>
-          Tableau de bord
-        </Text>
 
-        <LogoutButton />
-      </View>
+      <DriverLocation />
+
+      <AppHeader
+        title="Tableau de bord"
+        profileRoute="/(driver)/profile"
+      />
 
       {!subscriptionActive && (
         <View style={styles.warningCard}>
@@ -374,15 +372,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 20,
   },
 
   title: {
     fontSize: 30,
     fontWeight: "bold",
     color: "#0B6E4F",
-    marginBottom: 25,
   },
-
   warningCard: {
     backgroundColor: "#FFF3CD",
     borderRadius: 15,

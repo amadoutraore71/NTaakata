@@ -18,8 +18,8 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../../firebase/config";
+import AppHeader from "../../components/AppHeader";
 import { getUser } from "../../storage/userStorage";
-
 export default function CurrentRide() {
 
   const [ride, setRide] = useState(null);
@@ -116,10 +116,10 @@ export default function CurrentRide() {
 
   return (
     <SafeAreaView style={styles.container}>
-
-      <Text style={styles.title}>
-        Course actuelle
-      </Text>
+      <AppHeader
+        title="Course actuelle"
+        profileRoute="/(driver)/profile"
+      />
 
       <View style={styles.card}>
 

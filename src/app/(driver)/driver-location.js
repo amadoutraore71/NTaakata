@@ -7,9 +7,8 @@ import {
   getDocs,
   query,
   updateDoc,
-  where,
+  where
 } from "firebase/firestore";
-
 import { db } from "../../../firebase/config";
 
 import { getUser } from "../../storage/userStorage";
@@ -87,6 +86,26 @@ export default function DriverLocation() {
                   new Date().toISOString(),
               }
             );
+            const rideQuery = query(
+  collection(db, "rides"),
+  where("driverPhone", "==", user.phone)
+);
+
+const rideSnapshot = await getDocs(rideQuery);
+
+rideSnapshot.forEach(async (rideDoc) => {
+  const ride = rideDoc.data();
+
+  if (
+    ride.status === "accepted" ||
+    ride.status === "started"
+  ) {
+    await updateDoc(rideDoc.ref, {
+      driverLatitude: location.coords.latitude,
+      driverLongitude: location.coords.longitude,
+    });
+  }
+});
             console.log(
               "Position envoyée :",
               location.coords.latitude,

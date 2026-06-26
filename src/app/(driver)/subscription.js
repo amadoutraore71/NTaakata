@@ -19,8 +19,8 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
+import Header from "../../components/Header";
 import { getUser } from "../../storage/userStorage";
-
 export default function Subscription() {
   const handlePayment = async () => {
     try {
@@ -100,7 +100,10 @@ export default function Subscription() {
         barStyle="dark-content"
         backgroundColor="#FFFFFF"
       />
-
+<Header
+  title="Accueil"
+  profileRoute="/(passenger)/profile"
+/>
       <View style={styles.card}>
         <Text style={styles.title}>
           Abonnement Conducteur

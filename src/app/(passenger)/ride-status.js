@@ -15,8 +15,8 @@ import {
 } from "react-native";
 
 
-
 import { db } from "../../../firebase/config";
+import AppHeader from "../../components/AppHeader";
 
 
 export default function RideStatus() {
@@ -62,10 +62,11 @@ export default function RideStatus() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>
-        Statut de la course
-      </Text>
 
+      <AppHeader
+        title="Statut de la course"
+        profileRoute="/(passenger)/profile"
+      />
       {!ride && (
         <Text style={styles.searching}>
           🔍 Recherche d'un conducteur...

@@ -8,7 +8,7 @@ import {
 } from "react-native";
 
 import { router } from "expo-router";
-
+import AppHeader from "../../components/AppHeader";
 export default function RideDetails() {
   const confirmRide = () => {
     router.push("/(passenger)/payment");
@@ -16,10 +16,10 @@ export default function RideDetails() {
 
   return (
     <SafeAreaView style={styles.container}>
-
-      <Text style={styles.title}>
-        Détails de la course
-      </Text>
+<AppHeader
+  title="Détails de la course"
+  profileRoute="/(driver)/profile"
+/>
 
       {/* Conducteur */}
       <View style={styles.driverCard}>
