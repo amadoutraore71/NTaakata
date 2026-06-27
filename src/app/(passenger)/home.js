@@ -1,43 +1,44 @@
+import * as Location from "expo-location";
+import {
+  router,
+} from "expo-router";
 import {
   addDoc,
   collection,
 } from "firebase/firestore";
+import { getDistance } from "geolib";
 import {
   useEffect,
   useState,
 } from "react";
-
-import * as Location from "expo-location";
-
-import {
-  router,
-} from "expo-router";
-
 import {
   Alert,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-
 import { db } from "../../../firebase/config";
-
-import AppHeader from "../../components/AppHeader";
+import BottomNavigation from "../../components/BottomNavigation";
+import LocationCard from "../../components/LocationCard";
+import PrimaryButton from "../../components/PrimaryButton";
 import {
   getUser,
 } from "../../storage/userStorage";
+import { getCoordinatesFromAddress } from "../../utils/geocoding";
 
+import VehicleCard from "../../components/VehicleCard";
 import {
   calculateFare,
 } from "../../utils/fareCalculator";
-
 export default function PassengerHome() {
   const [pickup, setPickup] =
     useState("");
-
+  const [estimatedDistance, setEstimatedDistance] = useState(0);
+  const [user, setUser] = useState(null);
   const [
     destination,
     setDestination,
@@ -49,8 +50,28 @@ export default function PassengerHome() {
 
   useEffect(() => {
     getCurrentLocation();
+    loadUser();
   }, []);
+  useEffect(() => {
 
+    calculateEstimate();
+
+  }, [
+    destination,
+    vehicleType,
+    currentLocation,
+  ]);
+  const loadUser = async () => {
+    try {
+      const currentUser = await getUser();
+
+      if (currentUser) {
+        setUser(currentUser);
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
   const getCurrentLocation = async () => {
     try {
       const { status } =
@@ -70,7 +91,21 @@ export default function PassengerHome() {
         });
 
       setCurrentLocation(location);
+      const address =
+        await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
 
+      if (address.length > 0) {
+
+        const place = address[0];
+
+        setPickup(
+          `${place.street || ""} ${place.district || place.subregion || ""}`
+        );
+
+      }
       console.log(
         "Position actuelle :",
         location.coords
@@ -87,6 +122,57 @@ export default function PassengerHome() {
       setLoadingLocation(false);
     }
   };
+  const calculateEstimate = async (
+    selectedVehicle = vehicleType
+  ) => {
+
+    if (!destination || !currentLocation) {
+      setEstimatedDistance(0);
+      return;
+    }
+
+    try {
+
+      const destinationLocation =
+        await getCoordinatesFromAddress(
+          destination
+        );
+
+      if (!destinationLocation) {
+        return;
+      }
+
+      const distanceInMeters =
+        getDistance(
+          {
+            latitude:
+              currentLocation.coords.latitude,
+            longitude:
+              currentLocation.coords.longitude,
+          },
+          {
+            latitude:
+              destinationLocation.latitude,
+            longitude:
+              destinationLocation.longitude,
+          }
+        );
+
+      const distance = Number(
+        (distanceInMeters / 1000).toFixed(1)
+      );
+
+      setEstimatedDistance(distance);
+
+
+
+    } catch (error) {
+
+      console.log(error);
+
+    }
+
+  }
   const handleRideRequest =
     async () => {
       try {
@@ -101,8 +187,17 @@ export default function PassengerHome() {
           return;
         }
 
-        const user =
-          await getUser();
+
+        const destinationLocation =
+          await getCoordinatesFromAddress(destination);
+
+        if (!destinationLocation) {
+          Alert.alert(
+            "Erreur",
+            "Destination introuvable."
+          );
+          return;
+        }
         if (!currentLocation) {
           Alert.alert(
             "Patientez",
@@ -110,63 +205,59 @@ export default function PassengerHome() {
           );
           return;
         }
-        const distance = 7;
-
-        const price =
-          calculateFare(
-            pickup,
-            destination
-          );
-
-        await addDoc(
-          collection(db, "rides"),
+        const distanceInMeters = getDistance(
           {
-
-            pickup,
-
-            destination,
-
-            pickupLatitude:
-              currentLocation?.coords.latitude,
-
-            pickupLongitude:
-              currentLocation?.coords.longitude,
-
-            destinationLatitude: null,
-
-            destinationLongitude: null,
-
-            vehicleType,
-
-            passengerName:
-              user?.name || "",
-
-            passengerPhone:
-              user?.phone || "",
-
-            distance,
-
-            price,
-
-            status: "pending",
-
-            createdAt:
-              new Date().toISOString(),
-
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+          },
+          {
+            latitude: destinationLocation.latitude,
+            longitude: destinationLocation.longitude,
           }
         );
 
+        const distance =
+          (distanceInMeters / 1000).toFixed(1);
+        const price = calculateFare(
+          Number(distance),
+          vehicleType
+        );
+
+        const rideRef = await addDoc(
+          collection(db, "rides"),
+          {
+            pickup,
+            destination,
+            pickupLatitude: currentLocation.coords.latitude,
+            pickupLongitude: currentLocation.coords.longitude,
+            destinationLatitude: destinationLocation.latitude,
+            destinationLongitude: destinationLocation.longitude,
+            vehicleType,
+            passengerName: user?.name || "",
+            passengerPhone: user?.phone || "",
+            distance,
+            price,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+          }
+        );
         Alert.alert(
           "Succès",
           "Votre demande a été envoyée"
         );
 
-        setPickup("");
         setDestination("");
+        setEstimatedDistance(0);
 
-        router.push(
-          "/(passenger)/ride-status"
-        );
+        // Recharge la position actuelle
+        getCurrentLocation();
+
+        router.push({
+          pathname: "/(passenger)/ride-status",
+          params: {
+            rideId: rideRef.id,
+          },
+        });
 
       } catch (error) {
         console.log(error);
@@ -177,214 +268,125 @@ export default function PassengerHome() {
         );
       }
     };
-
+  ;
   return (
     <SafeAreaView
       style={styles.container}
     >
+      <ScrollView
+        contentContainerStyle={{
+          padding: 20,
+          paddingTop: 60,
+          paddingBottom: 30,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
 
-      <AppHeader
-        title="Commander une course"
-        profileRoute="/(passenger)/profile"
-      />
+          <View>
 
-
-
-      <View style={styles.card}>
-
-
-
-        <Text style={styles.label}>
-          📍 Point de départ
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Ex: Sogoniko"
-          value={pickup}
-          onChangeText={setPickup}
-        />
-
-        <Text style={styles.label}>
-          🎯 Destination
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Ex: Kalaban Coura"
-          value={destination}
-          onChangeText={setDestination}
-        />
-        <Text style={styles.label}>
-          🚕 Type de transport
-        </Text>
-        <View
-          style={{
-            flexDirection: "row",
-            marginTop: 10,
-            marginBottom: 15,
-          }}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor:
-                vehicleType === "moto"
-                  ? "#0B6E4F"
-                  : "#E5E5E5",
-              padding: 15,
-              borderRadius: 10,
-              marginRight: 5,
-              alignItems: "center",
-            }}
-            onPress={() =>
-              setVehicleType("moto")
-            }
-          >
-            <Text
-              style={{
-                color:
-                  vehicleType === "moto"
-                    ? "#FFF"
-                    : "#000",
-              }}
-            >
-              🏍️ Moto
+            <Text style={styles.hello}>
+              👋 Bonjour {user?.name || "Passager"}
             </Text>
-          </TouchableOpacity>
+
+            <Text style={styles.title}>
+              Commander une course
+            </Text>
+
+          </View>
 
           <TouchableOpacity
-            style={{
-              flex: 1,
-              backgroundColor:
-                vehicleType === "voiture"
-                  ? "#0B6E4F"
-                  : "#E5E5E5",
-              padding: 15,
-              borderRadius: 10,
-              marginLeft: 5,
-              alignItems: "center",
-            }}
+            style={styles.profileButton}
             onPress={() =>
-              setVehicleType("voiture")
+              router.push("/(passenger)/profile")
             }
           >
-            <Text
-              style={{
-                color:
-                  vehicleType === "voiture"
-                    ? "#FFF"
-                    : "#000",
-              }}
-            >
-              🚗 Voiture
+
+            <Text style={styles.profileIcon}>
+              👤
             </Text>
+
           </TouchableOpacity>
+
         </View>
 
 
-        <View
-          style={
-            styles.priceCard
-          }
-        >
-          <Text
-            style={
-              styles.priceLabel
-            }
-          >
-            Distance estimée
-          </Text>
 
-          <Text
-            style={styles.price}
-          >
-            7 km
-          </Text>
+        <View style={styles.card}>
 
-          <Text
-            style={[
-              styles.priceLabel,
-              {
-                marginTop: 10,
-              },
-            ]}
-          >
-            Prix estimé
-          </Text>
 
-          <Text
-            style={styles.price}
-          >
-            {calculateFare(
-              pickup,
-              destination
-            )} FCFA
-          </Text>
+
+          <View style={styles.section}>
+
+            <Text style={styles.sectionTitle}>
+              📍 Position actuelle
+            </Text>
+
+            <LocationCard location={pickup} />
+          </View>
+
+          <View style={styles.section}>
+
+            <Text style={styles.sectionTitle}>
+              🎯 Destination
+            </Text>
+
+            <TextInput
+              style={styles.destinationInput}
+              placeholder="Où allez-vous ?"
+              value={destination}
+              onChangeText={setDestination}
+            />
+
+          </View>
+
+          <View style={styles.section}>
+
+            <Text style={styles.sectionTitle}>
+              🚕 Choisissez votre véhicule
+            </Text>
+
+            <View style={styles.vehicleContainer}>
+              <VehicleCard
+                icon="🏍️"
+                title="Moto"
+                badge="Économique"
+                vehicleKey="moto"
+                selectedVehicle={vehicleType}
+                distance={estimatedDistance}
+                onPress={() => setVehicleType("moto")}
+              />
+              <VehicleCard
+                icon="🚗"
+                title="Standard"
+                badge="Populaire"
+                vehicleKey="voiture"
+                selectedVehicle={vehicleType}
+                distance={estimatedDistance}
+                onPress={() => setVehicleType("voiture")}
+              />
+
+              <VehicleCard
+                icon="❄️"
+                title="Premium"
+                badge="Climatisée"
+                vehicleKey="climatisee"
+                selectedVehicle={vehicleType}
+                distance={estimatedDistance}
+                onPress={() => setVehicleType("climatisee")}
+              />
+            </View>
+
+          </View>
+          <PrimaryButton
+            title="Commander"
+            onPress={handleRideRequest}
+            disabled={!destination || loadingLocation}
+          />
+
         </View>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={
-            handleRideRequest
-          }
-        >
-          <Text
-            style={
-              styles.buttonText
-            }
-          >
-            Commander
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={
-            styles.historyButton
-          }
-          onPress={() =>
-            router.push(
-              "/(passenger)/history"
-            )
-          }
-        >
-          <Text
-            style={
-              styles.historyText
-            }
-          >
-            Mes Courses
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.historyButton}
-          onPress={() =>
-            router.push(
-              "/(passenger)/drivers-nearby"
-            )
-          }
-        >
-          <Text
-            style={styles.historyText}
-          >
-            Conducteurs disponibles
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.historyButton}
-          onPress={() =>
-            router.push(
-              "/(passenger)/drivers-map"
-            )
-          }
-        >
-          <Text
-            style={styles.historyText}
-          >
-            Voir la carte
-          </Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
+      <BottomNavigation active="home" />
     </SafeAreaView>
   );
 }
@@ -393,22 +395,14 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor:
-        "#FFFFFF",
-      padding: 20,
-      marginTop: 80,
+      backgroundColor: "#F5F7FA",
     },
-
-    header: {
-      flexDirection:
-        "row",
-      justifyContent:
-        "space-between",
-      alignItems:
-        "center",
-      marginBottom: 20,
-    },
-
+vehicleContainer: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "stretch",
+  marginTop: 10,
+},
     title: {
       fontSize: 28,
       fontWeight: "bold",
@@ -420,59 +414,6 @@ const styles =
         "#F8F8F8",
       borderRadius: 15,
       padding: 20,
-    },
-
-    label: {
-      fontWeight: "600",
-      marginBottom: 8,
-      marginTop: 10,
-    },
-
-    input: {
-      backgroundColor:
-        "#FFFFFF",
-      borderWidth: 1,
-      borderColor:
-        "#E5E5E5",
-      borderRadius: 12,
-      paddingHorizontal: 15,
-      height: 55,
-    },
-
-    priceCard: {
-      backgroundColor:
-        "#FFF3CD",
-      padding: 15,
-      borderRadius: 12,
-      marginTop: 20,
-    },
-
-    priceLabel: {
-      color: "#666",
-    },
-
-    price: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: "#0B6E4F",
-      marginTop: 5,
-    },
-
-    button: {
-      backgroundColor:
-        "#F4C300",
-      height: 55,
-      borderRadius: 12,
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-      marginTop: 20,
-    },
-
-    buttonText: {
-      fontSize: 18,
-      fontWeight: "bold",
     },
 
     historyButton: {
@@ -492,4 +433,59 @@ const styles =
       fontSize: 16,
       fontWeight: "bold",
     },
+
+
+    hello: {
+      fontSize: 18,
+      color: "#777",
+    },
+
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 25,
+    },
+
+    profileButton: {
+      width: 55,
+      height: 55,
+      borderRadius: 30,
+      backgroundColor: "#0B6E4F",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+
+    badgeText: {
+      fontSize: 12,
+      fontWeight: "700",
+    },
+
+
+
+    profileIcon: {
+      fontSize: 28,
+      color: "#FFF",
+    },
+
+    section: {
+      marginBottom: 20,
+    },
+
+    sectionTitle: {
+      fontSize: 18,
+      fontWeight: "700",
+      marginBottom: 10,
+    },
+
+
+    destinationInput: {
+      backgroundColor: "#FFF",
+      borderRadius: 18,
+      height: 58,
+      paddingHorizontal: 18,
+      fontSize: 17,
+      elevation: 4,
+    },
+
   });

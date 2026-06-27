@@ -37,6 +37,7 @@ export default function Otp() {
     vehicleColor,
     plateNumber,
     seats,
+    airConditioned,
   } = useLocalSearchParams();
 
   const [otp, setOtp] =
@@ -132,6 +133,8 @@ export default function Otp() {
 
             vehicleModel:
               vehicleModel || null,
+            airConditioned:
+              airConditioned === "true",
 
             vehicleColor:
               vehicleColor || null,
@@ -177,6 +180,7 @@ export default function Otp() {
           vehicleColor,
           plateNumber,
           seats,
+          airConditioned,
         });
         await saveUser({
           userId,
@@ -189,6 +193,8 @@ export default function Otp() {
           vehicleColor,
           plateNumber,
           seats,
+          airConditioned:
+            airConditioned === "true",
         });
 
         Alert.alert(

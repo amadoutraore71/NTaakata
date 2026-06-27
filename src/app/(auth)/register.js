@@ -30,6 +30,8 @@ export default function Register() {
 
   const [vehicleModel, setVehicleModel] =
     useState("");
+  const [airConditioned, setAirConditioned] =
+    useState(false);
 
   const [vehicleColor, setVehicleColor] =
     useState("");
@@ -60,78 +62,78 @@ export default function Register() {
     }
 
     if (phone.length < 8) {
-  Alert.alert(
-    "Erreur",
-    "Numéro de téléphone invalide"
-  );
-  return;
-}
+      Alert.alert(
+        "Erreur",
+        "Numéro de téléphone invalide"
+      );
+      return;
+    }
 
- if (
-  role === "driver" &&
-  !vehicleType
-) {
-  Alert.alert(
-    "Erreur",
-    "Choisissez un type de véhicule"
-  );
-  return;
-}
+    if (
+      role === "driver" &&
+      !vehicleType
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Choisissez un type de véhicule"
+      );
+      return;
+    }
 
-if (
-  role === "driver" &&
-  !vehicleBrand.trim()
-) {
-  Alert.alert(
-    "Erreur",
-    "Veuillez saisir la marque du véhicule"
-  );
-  return;
-}
+    if (
+      role === "driver" &&
+      !vehicleBrand.trim()
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Veuillez saisir la marque du véhicule"
+      );
+      return;
+    }
 
-if (
-  role === "driver" &&
-  !vehicleColor.trim()
-) {
-  Alert.alert(
-    "Erreur",
-    "Veuillez saisir la couleur du véhicule"
-  );
-  return;
-}
+    if (
+      role === "driver" &&
+      !vehicleColor.trim()
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Veuillez saisir la couleur du véhicule"
+      );
+      return;
+    }
 
-if (
-  role === "driver" &&
-  !plateNumber.trim()
-) {
-  Alert.alert(
-    "Erreur",
-    "Veuillez saisir l'immatriculation"
-  );
-  return;
-}
+    if (
+      role === "driver" &&
+      !plateNumber.trim()
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Veuillez saisir l'immatriculation"
+      );
+      return;
+    }
 
-if (
-  vehicleType === "voiture" &&
-  !vehicleModel.trim()
-) {
-  Alert.alert(
-    "Erreur",
-    "Veuillez saisir le modèle"
-  );
-  return;
-}
+    if (
+      vehicleType === "voiture" &&
+      !vehicleModel.trim()
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Veuillez saisir le modèle"
+      );
+      return;
+    }
 
-if (
-  vehicleType === "voiture" &&
-  !seats.trim()
-) {
-  Alert.alert(
-    "Erreur",
-    "Veuillez saisir le nombre de places"
-  );
-  return;
-}
+    if (
+      vehicleType === "voiture" &&
+      !seats.trim()
+    ) {
+      Alert.alert(
+        "Erreur",
+        "Veuillez saisir le nombre de places"
+      );
+      return;
+    }
     router.push({
       pathname: "/(auth)/otp",
       params: {
@@ -144,6 +146,7 @@ if (
         vehicleColor,
         plateNumber,
         seats,
+        airConditioned,
       },
     });
   };
@@ -318,7 +321,85 @@ if (
                   value={seats}
                   onChangeText={setSeats}
                 />
+                <Text
+                  style={{
+                    marginLeft: 25,
+                    marginBottom: 10,
+                    fontWeight: "bold",
+                  }}
+                >
+                  Votre véhicule est-il climatisé ?
+                </Text>
 
+                <View
+                  style={{
+                    flexDirection: "row",
+                    marginHorizontal: 25,
+                    marginBottom: 15,
+                  }}
+                >
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor:
+                        airConditioned
+                          ? "#0B6E4F"
+                          : "#E5E5E5",
+                      padding: 15,
+                      borderRadius: 10,
+                      marginRight: 5,
+                      alignItems: "center",
+                    }}
+                    onPress={() =>
+                      setAirConditioned(true)
+                    }
+                  >
+
+                    <Text
+                      style={{
+                        color:
+                          airConditioned
+                            ? "#FFF"
+                            : "#000",
+                      }}
+                    >
+                      ❄️ Oui
+                    </Text>
+
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      backgroundColor:
+                        !airConditioned
+                          ? "#0B6E4F"
+                          : "#E5E5E5",
+                      padding: 15,
+                      borderRadius: 10,
+                      marginLeft: 5,
+                      alignItems: "center",
+                    }}
+                    onPress={() =>
+                      setAirConditioned(false)
+                    }
+                  >
+
+                    <Text
+                      style={{
+                        color:
+                          !airConditioned
+                            ? "#FFF"
+                            : "#000",
+                      }}
+                    >
+                      🌤️ Non
+                    </Text>
+
+                  </TouchableOpacity>
+
+                </View>
                 <TextInput
                   style={styles.input}
                   placeholder="Immatriculation"
