@@ -1,74 +1,174 @@
 import { useEffect, useState } from "react";
 
-import MapView, {
-  Marker,
-} from "react-native-maps";
-
 import {
   ActivityIndicator,
   SafeAreaView,
   StyleSheet,
-  Text,
 } from "react-native";
+
+import { Asset } from "expo-asset";
+import * as Location from "expo-location";
 
 import {
   collection,
-  getDocs,
+  onSnapshot,
+  query,
+  where,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
 
-export default function DriversMap() {
-  const [drivers, setDrivers] =
-    useState([]);
+import LeafletMap from "../../components/LeafletMap";
+import generateLeafletHtml from "../../utils/leafletHtml";
 
-  const [loading, setLoading] =
-    useState(true);
+export default function DriversMap() {
+  const [loading, setLoading] = useState(true);
+
+  const [drivers, setDrivers] = useState([]);
+
+  const [html, setHtml] = useState("");
+
+  const [currentLocation, setCurrentLocation] =
+    useState(null);
+
+  const [icons, setIcons] = useState({
+    car: "",
+    moto: "",
+    passenger: "",
+  });
 
   useEffect(() => {
-    loadDrivers();
+    let unsubscribe;
+
+    const init = async () => {
+      unsubscribe = await loadMap();
+    };
+
+    init();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
-  const loadDrivers = async () => {
+  useEffect(() => {
+    if (
+      !currentLocation ||
+      !icons.car ||
+      !icons.moto ||
+      !icons.passenger
+    ) {
+      return;
+    }
+
+    const htmlContent =
+      generateLeafletHtml(
+        currentLocation,
+        drivers,
+        icons
+      );
+
+    setHtml(htmlContent);
+  }, [
+    drivers,
+    currentLocation,
+    icons,
+  ]);
+
+  const loadMap = async () => {
     try {
-      const querySnapshot =
-        await getDocs(
-          collection(db, "users")
+      // Chargement des icônes
+
+      const carAsset = Asset.fromModule(
+        require("../../../assets/map-icons/car.png")
+      );
+
+      const motoAsset = Asset.fromModule(
+        require("../../../assets/map-icons/moto.png")
+      );
+
+      const passengerAsset =
+        Asset.fromModule(
+          require("../../../assets/map-icons/passenger.png")
         );
 
-      const driversList = [];
+      await Promise.all([
+        carAsset.downloadAsync(),
+        motoAsset.downloadAsync(),
+        passengerAsset.downloadAsync(),
+      ]);
 
-      querySnapshot.forEach(
-        (document) => {
-          const data =
-            document.data();
+      setIcons({
+        car: carAsset.uri,
+        moto: motoAsset.uri,
+        passenger: passengerAsset.uri,
+      });
 
-          console.log(
-            "USER =",
-            data
-          );
+      // Permission GPS
 
-          if (
-            data.role === "driver" &&
-            data.isOnline &&
-            data.latitude &&
-            data.longitude
-          ) {
-            driversList.push({
-              id: document.id,
-              ...data,
-            });
+      const { status } =
+        await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") {
+        setLoading(false);
+        return;
+      }
+
+      // Position actuelle
+
+      const location =
+        await Location.getCurrentPositionAsync(
+          {}
+        );
+
+      setCurrentLocation({
+        latitude:
+          location.coords.latitude,
+
+        longitude:
+          location.coords.longitude,
+      });
+
+      // Conducteurs disponibles
+
+      const q = query(
+        collection(db, "users"),
+        where("role", "==", "driver"),
+        where("isOnline", "==", true)
+      );
+
+      const unsubscribe =
+        onSnapshot(
+          q,
+          (snapshot) => {
+            const list = [];
+
+            snapshot.forEach(
+              (doc) => {
+                const data =
+                  doc.data();
+
+                if (
+                  data.latitude &&
+                  data.longitude
+                ) {
+                  list.push({
+                    id: doc.id,
+                    ...data,
+                    iconCar: icons.car,
+                    iconMoto: icons.moto,
+                  });
+                }
+              }
+            );
+
+            setDrivers(list);
           }
-        }
-      );
+        );
 
-      console.log(
-        "CONDUCTEURS TROUVES =",
-        driversList.length
-      );
-
-      setDrivers(driversList);
-
+      return unsubscribe;
     } catch (error) {
       console.log(error);
     } finally {
@@ -79,7 +179,7 @@ export default function DriversMap() {
   if (loading) {
     return (
       <SafeAreaView
-        style={styles.center}
+        style={styles.loading}
       >
         <ActivityIndicator
           size="large"
@@ -88,51 +188,12 @@ export default function DriversMap() {
       </SafeAreaView>
     );
   }
-  console.log("DRIVERS =", drivers);
+
   return (
     <SafeAreaView
       style={styles.container}
     >
-      <Text style={styles.title}>
-        Conducteurs proches
-      </Text>
-
-      <MapView
-        style={styles.map}
-        initialRegion={{
-          latitude:
-            drivers[0]?.latitude ||
-            12.6392,
-
-          longitude:
-            drivers[0]?.longitude ||
-            -8.0029,
-
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-      >
-        {drivers.map(
-          (driver) => (
-            <Marker
-              key={driver.id}
-              coordinate={{
-                latitude:
-                  driver.latitude,
-                longitude:
-                  driver.longitude,
-              }}
-              title={
-                driver.name
-              }
-              description={
-                driver.vehicleType ||
-                "Conducteur"
-              }
-            />
-          )
-        )}
-      </MapView>
+      <LeafletMap html={html} />
     </SafeAreaView>
   );
 }
@@ -141,26 +202,13 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor:
-        "#FFFFFF",
+      backgroundColor: "#FFF",
     },
 
-    center: {
+    loading: {
       flex: 1,
-      justifyContent:
-        "center",
-      alignItems:
-        "center",
-    },
-
-    title: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: "#0B6E4F",
-      padding: 15,
-    },
-
-    map: {
-      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#FFF",
     },
   });

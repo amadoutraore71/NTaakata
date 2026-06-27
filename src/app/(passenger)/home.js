@@ -18,8 +18,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { db } from "../../../firebase/config";
 import BottomNavigation from "../../components/BottomNavigation";
@@ -289,32 +288,11 @@ export default function PassengerHome() {
               👋 Bonjour {user?.name || "Passager"}
             </Text>
 
-            <Text style={styles.title}>
-              Commander une course
-            </Text>
-
           </View>
-
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() =>
-              router.push("/(passenger)/profile")
-            }
-          >
-
-            <Text style={styles.profileIcon}>
-              👤
-            </Text>
-
-          </TouchableOpacity>
 
         </View>
 
-
-
         <View style={styles.card}>
-
-
 
           <View style={styles.section}>
 
