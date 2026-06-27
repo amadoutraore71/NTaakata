@@ -24,7 +24,7 @@ export default function Index() {
       console.log("Utilisateur enregistré :", user);
 
       if (!user) {
-        router.replace("/(auth)/login");
+        router.replace("/role-selection");
         return;
       }
 

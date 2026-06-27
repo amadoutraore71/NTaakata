@@ -14,7 +14,6 @@ import {
   View,
 } from "react-native";
 
-
 import { db } from "../../../firebase/config";
 import AppHeader from "../../components/AppHeader";
 
@@ -22,7 +21,11 @@ import AppHeader from "../../components/AppHeader";
 export default function RideStatus() {
   const { rideId } = useLocalSearchParams();
   const [ride, setRide] = useState(null);
+const [driverLocation, setDriverLocation] =
+  useState(null);
 
+const [passengerLocation, setPassengerLocation] =
+  useState(null);
   useEffect(() => {
     if (!rideId) return;
 
@@ -39,6 +42,29 @@ export default function RideStatus() {
         console.log("Course mise à jour :", rideData);
 
         setRide(rideData);
+        if (
+  rideData.driverLatitude &&
+  rideData.driverLongitude
+) {
+
+  setDriverLocation({
+    latitude: rideData.driverLatitude,
+    longitude: rideData.driverLongitude,
+  });
+
+}
+
+if (
+  rideData.passengerLatitude &&
+  rideData.passengerLongitude
+) {
+
+  setPassengerLocation({
+    latitude: rideData.passengerLatitude,
+    longitude: rideData.passengerLongitude,
+  });
+
+}
       }
     );
 

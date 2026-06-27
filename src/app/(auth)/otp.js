@@ -158,8 +158,10 @@ export default function Otp() {
                 "driver"
                 ? 100
                 : 0,
-            averageRating: 0,
-            totalRatings: 0,
+            totalRides: 0,
+            isOnline: false,
+            latitude: null,
+            longitude: null,
             createdAt:
               new Date().toISOString(),
           }

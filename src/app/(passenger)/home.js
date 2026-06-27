@@ -2,10 +2,16 @@ import {
   addDoc,
   collection,
 } from "firebase/firestore";
-
 import {
+  useEffect,
   useState,
 } from "react";
+
+import * as Location from "expo-location";
+
+import {
+  router,
+} from "expo-router";
 
 import {
   Alert,
@@ -17,14 +23,9 @@ import {
   View,
 } from "react-native";
 
-import {
-  router,
-} from "expo-router";
-
 import { db } from "../../../firebase/config";
 
 import AppHeader from "../../components/AppHeader";
-import LogoutButton from "../../components/LogoutButton";
 import {
   getUser,
 } from "../../storage/userStorage";
@@ -43,6 +44,49 @@ export default function PassengerHome() {
   ] = useState("");
   const [vehicleType, setVehicleType] =
     useState("moto");
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [loadingLocation, setLoadingLocation] = useState(true);
+
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } =
+        await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission refusée",
+          "Veuillez autoriser l'accès à votre position."
+        );
+        return;
+      }
+
+      const location =
+        await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+
+      setCurrentLocation(location);
+
+      console.log(
+        "Position actuelle :",
+        location.coords
+      );
+
+    } catch (error) {
+      console.log(error);
+
+      Alert.alert(
+        "Erreur",
+        "Impossible de récupérer votre position."
+      );
+    } finally {
+      setLoadingLocation(false);
+    }
+  };
   const handleRideRequest =
     async () => {
       try {
@@ -59,7 +103,13 @@ export default function PassengerHome() {
 
         const user =
           await getUser();
-
+        if (!currentLocation) {
+          Alert.alert(
+            "Patientez",
+            "La position GPS est en cours de récupération."
+          );
+          return;
+        }
         const distance = 7;
 
         const price =
@@ -71,9 +121,23 @@ export default function PassengerHome() {
         await addDoc(
           collection(db, "rides"),
           {
+
             pickup,
+
             destination,
+
+            pickupLatitude:
+              currentLocation?.coords.latitude,
+
+            pickupLongitude:
+              currentLocation?.coords.longitude,
+
+            destinationLatitude: null,
+
+            destinationLongitude: null,
+
             vehicleType,
+
             passengerName:
               user?.name || "",
 
@@ -88,6 +152,7 @@ export default function PassengerHome() {
 
             createdAt:
               new Date().toISOString(),
+
           }
         );
 
@@ -117,19 +182,15 @@ export default function PassengerHome() {
     <SafeAreaView
       style={styles.container}
     >
-      <View
-        style={styles.header}
-      >
-        <AppHeader
-          title="Commander une course"
-          profileRoute="/(driver)/profile"
-        />
-        <LogoutButton />
-      </View>
+
+      <AppHeader
+        title="Commander une course"
+        profileRoute="/(passenger)/profile"
+      />
+
+
 
       <View style={styles.card}>
-
-
 
 
 
