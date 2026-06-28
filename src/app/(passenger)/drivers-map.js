@@ -4,6 +4,8 @@ import {
   ActivityIndicator,
   SafeAreaView,
   StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import { Asset } from "expo-asset";
@@ -29,6 +31,11 @@ export default function DriversMap() {
   const [html, setHtml] = useState("");
 
   const [currentLocation, setCurrentLocation] =
+    useState(null);
+  const [selectedDriver, setSelectedDriver] =
+    useState(null);
+
+  const [routeInfo, setRouteInfo] =
     useState(null);
 
   const [icons, setIcons] = useState({
@@ -195,7 +202,34 @@ export default function DriversMap() {
       <LeafletMap
         html={html}
         drivers={drivers}
+        onDriverSelected={setSelectedDriver}
+        onRouteInfo={setRouteInfo}
       />
+      {
+        selectedDriver &&
+        routeInfo && (
+
+          <View style={styles.driverCard}>
+
+            <Text style={styles.name}>
+              {selectedDriver.name}
+            </Text>
+
+            <Text>
+              📍 {(routeInfo.distance / 1000).toFixed(1)} km
+            </Text>
+
+            <Text>
+              ⏱ {Math.ceil(routeInfo.duration / 60)} min
+            </Text>
+
+            <Text>
+              🚗 {selectedDriver.vehicleBrand}
+            </Text>
+
+          </View>
+
+        )}
     </SafeAreaView>
   );
 }
@@ -213,4 +247,33 @@ const styles =
       alignItems: "center",
       backgroundColor: "#FFF",
     },
+    driverCard: {
+
+  position: "absolute",
+
+  bottom: 20,
+
+  left: 15,
+
+  right: 15,
+
+  backgroundColor: "#FFF",
+
+  borderRadius: 18,
+
+  padding: 18,
+
+  elevation: 8,
+
+},
+
+name: {
+
+  fontSize: 18,
+
+  fontWeight: "bold",
+
+  marginBottom: 10,
+
+},
   });

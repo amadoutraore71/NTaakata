@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 export default function LeafletMap({ html,
-    drivers, }) {
+    drivers, onDriverSelected,
+  onRouteInfo}) {
     const [mapReady, setMapReady] = useState(false);
 
     const webViewRef = useRef(null);
@@ -42,35 +43,36 @@ export default function LeafletMap({ html,
   startInLoadingState
   onLoadEnd={() => setMapReady(true)}
 
- onMessage={(event) => {
 
-  const data = JSON.parse(event.nativeEvent.data);
+onMessage={(event) => {
 
-  if (data.type === "driver_selected") {
+  try {
+
+    const data = JSON.parse(event.nativeEvent.data);
+if (data.type === "driver_selected") {
+
+  onDriverSelected?.(data.driver);
+
+}
+
+if (data.type === "route_info") {
+
+  onRouteInfo?.({
+    distance: data.distance,
+    duration: data.duration
+  });
+
+}
+
+  } catch {
 
     console.log(
-      "Conducteur sélectionné :",
-      data.driver
+      event.nativeEvent.data
     );
 
   }
-if (data.type === "route_info") {
 
-  console.log(
-    "Distance :",
-    data.distance,
-    "m"
-  );
-
-  console.log(
-    "Durée :",
-    data.duration,
-    "sec"
-  );
-
-}
-}
-}
+}}
   style={styles.map}
 />
     );
