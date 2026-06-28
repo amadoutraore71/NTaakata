@@ -66,13 +66,12 @@ export default function DriversMap() {
     const htmlContent =
       generateLeafletHtml(
         currentLocation,
-        drivers,
         icons
       );
 
     setHtml(htmlContent);
   }, [
-    drivers,
+
     currentLocation,
     icons,
   ]);
@@ -157,8 +156,8 @@ export default function DriversMap() {
                   list.push({
                     id: doc.id,
                     ...data,
-                    iconCar: icons.car,
-                    iconMoto: icons.moto,
+                    iconCar: carAsset.uri,
+                    iconMoto: motoAsset.uri,
                   });
                 }
               }
@@ -193,7 +192,10 @@ export default function DriversMap() {
     <SafeAreaView
       style={styles.container}
     >
-      <LeafletMap html={html} />
+      <LeafletMap
+        html={html}
+        drivers={drivers}
+      />
     </SafeAreaView>
   );
 }
