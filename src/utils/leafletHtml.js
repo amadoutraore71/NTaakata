@@ -42,7 +42,7 @@ padding:0;
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+<script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
 <script>
 
 const map = L.map("map").setView(
@@ -61,6 +61,7 @@ maxZoom:19
 ).addTo(map);
 
 const markers = {};
+
 const animations = {};
 const passengerIcon = L.icon({
 
@@ -106,16 +107,17 @@ function createMarker(driver) {
     popupAnchor: [0, -35]
 
   });
-
-  const marker = L.marker(
-    [
-      driver.latitude,
-      driver.longitude
-    ],
-    {
-      icon: driverIcon
-    }
-  );
+const marker = L.marker(
+  [
+    driver.latitude,
+    driver.longitude
+  ],
+  {
+    icon: driverIcon,
+    rotationAngle: 0,
+    rotationOrigin: "center center"
+  }
+);
 
   marker
     .addTo(map)
@@ -139,9 +141,9 @@ function createMarker(driver) {
 
   const markerId = marker._leaflet_id;
 
-  // Arrête une éventuelle animation déjà en cours
+  // Annule une animation en cours
   if (animations[markerId]) {
-    clearInterval(animations[markerId]);
+    cancelAnimationFrame(animations[markerId]);
     delete animations[markerId];
   }
 
@@ -152,20 +154,21 @@ function createMarker(driver) {
 
   const endLat = latitude;
   const endLng = longitude;
-
+const bearing = getBearing(
+  startLat,
+  startLng,
+  endLat,
+  endLng
+);
   const duration = 1000; // 1 seconde
 
-  const fps = 60;
+  const startTime = performance.now();
 
-  const totalFrames = Math.round((duration / 1000) * fps);
+  function animate(currentTime) {
 
-  let currentFrame = 0;
+    const elapsed = currentTime - startTime;
 
-  animations[markerId] = setInterval(() => {
-
-    currentFrame++;
-
-    const progress = currentFrame / totalFrames;
+    const progress = Math.min(elapsed / duration, 1);
 
     const lat =
       startLat +
@@ -176,21 +179,51 @@ function createMarker(driver) {
       (endLng - startLng) * progress;
 
     marker.setLatLng([lat, lng]);
+    marker.setRotationAngle(bearing);
 
-    if (currentFrame >= totalFrames) {
+
+    if (progress < 1) {
+
+      animations[markerId] =
+        requestAnimationFrame(animate);
+
+    } else {
 
       marker.setLatLng([
         endLat,
         endLng
       ]);
-
-      clearInterval(animations[markerId]);
-
+      marker.setRotationAngle(bearing);
       delete animations[markerId];
+      
 
     }
 
-  }, 1000 / fps);
+  }
+
+  animations[markerId] =
+    requestAnimationFrame(animate);
+
+}
+    function getBearing(lat1, lon1, lat2, lon2) {
+
+  const toRad = Math.PI / 180;
+
+  const y =
+    Math.sin((lon2 - lon1) * toRad) *
+    Math.cos(lat2 * toRad);
+
+  const x =
+    Math.cos(lat1 * toRad) *
+    Math.sin(lat2 * toRad) -
+    Math.sin(lat1 * toRad) *
+    Math.cos(lat2 * toRad) *
+    Math.cos((lon2 - lon1) * toRad);
+
+  const angle =
+    Math.atan2(y, x) * 180 / Math.PI;
+
+  return (angle + 360) % 360;
 
 }
  function removeMarker(id) {
@@ -199,7 +232,7 @@ function createMarker(driver) {
 
     if (animations[markers[id]._leaflet_id]) {
 
-      clearInterval(
+      cancelAnimationFrame(
         animations[markers[id]._leaflet_id]
       );
 
@@ -215,14 +248,33 @@ function createMarker(driver) {
 
   }
 
-}function updateDrivers(drivers) {
+}
+  function getBearing(lat1, lng1, lat2, lng2) {
 
+  const dLon = (lng2 - lng1) * Math.PI / 180;
+
+  const y =
+    Math.sin(dLon) *
+    Math.cos(lat2 * Math.PI / 180);
+
+  const x =
+    Math.cos(lat1 * Math.PI / 180) *
+    Math.sin(lat2 * Math.PI / 180) -
+    Math.sin(lat1 * Math.PI / 180) *
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.cos(dLon);
+
+  let bearing =
+    Math.atan2(y, x) * 180 / Math.PI;
+
+  bearing = (bearing + 360) % 360;
+
+  return bearing;
+
+}
+function updateDrivers(drivers) {
+  
    if (!Array.isArray(drivers)) return;
-
-  console.log(
-    "updateDrivers",
-    drivers.length
-  );
 
   const activeIds = [];
 
@@ -301,7 +353,8 @@ document.addEventListener("message", function(event) {
   }
 
 });
- window.ReactNativeWebView.postMessage("READY");
+
+ window.ReactNativeWebView.postMessage("Leaflet prêt");
 
 </script>
 

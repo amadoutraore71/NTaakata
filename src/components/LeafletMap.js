@@ -13,7 +13,10 @@ export default function LeafletMap({ html,
         if (!webViewRef.current) return;
 
         console.log("Envoi vers Leaflet");
-
+        console.log(
+            "Nombre de conducteurs envoyés :",
+            drivers.length
+        );
         webViewRef.current.postMessage(
             JSON.stringify(drivers)
         );
@@ -32,23 +35,23 @@ export default function LeafletMap({ html,
 
     return (
         <WebView
-            ref={webViewRef}
-            originWhitelist={["*"]}
-            source={{ html }}
-            javaScriptEnabled
-            domStorageEnabled
-            startInLoadingState
-            style={styles.map}
-            onMessage={(event) => {
+  ref={webViewRef}
+  originWhitelist={["*"]}
+  source={{ html }}
+  javaScriptEnabled
+  domStorageEnabled
+  startInLoadingState
+  onLoadEnd={() => setMapReady(true)}
 
-                if (event.nativeEvent.data === "READY") {
+  onMessage={(event) => {
+    console.log(
+      "Message WebView :",
+      event.nativeEvent.data
+    );
+  }}
 
-                    setMapReady(true);
-
-                }
-
-            }}
-        />
+  style={styles.map}
+/>
     );
 }
 
