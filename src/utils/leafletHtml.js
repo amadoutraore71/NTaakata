@@ -61,8 +61,12 @@ maxZoom:19
 ).addTo(map);
 
 const markers = {};
-
 const animations = {};
+
+let selectedDriver = null;
+let routeLayer = null;
+
+
 const passengerIcon = L.icon({
 
   iconUrl: "${icons.passenger}",
@@ -130,7 +134,23 @@ const marker = L.marker(
       (driver.averageRating || 0) +
       "/5"
     );
+marker.on("click", function () {
 
+  selectedDriver = driver;
+drawRoute(
+  ${currentLocation.latitude},
+  ${currentLocation.longitude},
+  driver.latitude,
+  driver.longitude
+);
+  window.ReactNativeWebView.postMessage(
+    JSON.stringify({
+      type: "driver_selected",
+      driver: driver
+    })
+  );
+
+});
   markers[driver.id] = marker;
 
 }
@@ -205,50 +225,71 @@ const bearing = getBearing(
     requestAnimationFrame(animate);
 
 }
-    function getBearing(lat1, lon1, lat2, lon2) {
+ 
+    async function drawRoute(startLat, startLng, endLat, endLng) {
 
-  const toRad = Math.PI / 180;
+  try {
 
-  const y =
-    Math.sin((lon2 - lon1) * toRad) *
-    Math.cos(lat2 * toRad);
+    const url =
+      "https://router.project-osrm.org/route/v1/driving/" +
+      startLng +
+      "," +
+      startLat +
+      ";" +
+      endLng +
+      "," +
+      endLat +
+      "?overview=full&geometries=geojson";
 
-  const x =
-    Math.cos(lat1 * toRad) *
-    Math.sin(lat2 * toRad) -
-    Math.sin(lat1 * toRad) *
-    Math.cos(lat2 * toRad) *
-    Math.cos((lon2 - lon1) * toRad);
+    const response = await fetch(url);
 
-  const angle =
-    Math.atan2(y, x) * 180 / Math.PI;
+    const data = await response.json();
+const route = data.routes[0];
 
-  return (angle + 360) % 360;
+const distance = route.distance;
 
-}
- function removeMarker(id) {
+const duration = route.duration;
 
-  if (markers[id]) {
+window.ReactNativeWebView.postMessage(
+  JSON.stringify({
+    type: "route_info",
+    distance,
+    duration
+  })
+);
+    if (!data.routes.length) return;
 
-    if (animations[markers[id]._leaflet_id]) {
+    const coordinates =
+      data.routes[0].geometry.coordinates;
 
-      cancelAnimationFrame(
-        animations[markers[id]._leaflet_id]
-      );
+    const latLngs = coordinates.map(point => [
+      point[1],
+      point[0]
+    ]);
 
-      delete animations[
-        markers[id]._leaflet_id
-      ];
+    if (routeLayer) {
+
+      map.removeLayer(routeLayer);
 
     }
 
-    map.removeLayer(markers[id]);
+    routeLayer = L.polyline(
+      latLngs,
+      {
+        color: "#0B6E4F",
+        weight: 6,
+        opacity: 0.9
+      }
+    ).addTo(map);
 
-    delete markers[id];
+  } catch (error) {
+
+    console.log(error);
 
   }
 
 }
+    
   function getBearing(lat1, lng1, lat2, lng2) {
 
   const dLon = (lng2 - lng1) * Math.PI / 180;
@@ -353,7 +394,15 @@ document.addEventListener("message", function(event) {
   }
 
 });
-
+window.onerror = function(message, source, line, column, error) {
+  window.ReactNativeWebView.postMessage(
+    JSON.stringify({
+      type: "error",
+      message,
+      line
+    })
+  );
+};
  window.ReactNativeWebView.postMessage("Leaflet prêt");
 
 </script>

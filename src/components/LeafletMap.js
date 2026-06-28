@@ -12,7 +12,6 @@ export default function LeafletMap({ html,
 
         if (!webViewRef.current) return;
 
-        console.log("Envoi vers Leaflet");
         console.log(
             "Nombre de conducteurs envoyés :",
             drivers.length
@@ -43,13 +42,35 @@ export default function LeafletMap({ html,
   startInLoadingState
   onLoadEnd={() => setMapReady(true)}
 
-  onMessage={(event) => {
-    console.log(
-      "Message WebView :",
-      event.nativeEvent.data
-    );
-  }}
+ onMessage={(event) => {
 
+  const data = JSON.parse(event.nativeEvent.data);
+
+  if (data.type === "driver_selected") {
+
+    console.log(
+      "Conducteur sélectionné :",
+      data.driver
+    );
+
+  }
+if (data.type === "route_info") {
+
+  console.log(
+    "Distance :",
+    data.distance,
+    "m"
+  );
+
+  console.log(
+    "Durée :",
+    data.duration,
+    "sec"
+  );
+
+}
+}
+}
   style={styles.map}
 />
     );
