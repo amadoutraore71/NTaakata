@@ -137,6 +137,11 @@ const marker = L.marker(
 marker.on("click", function () {
 
   selectedDriver = driver;
+  console.log("Clic sur :", driver.name);
+console.log("Clic sur :", driver.name);
+
+console.log("drawRoute appelée");
+
 drawRoute(
   ${currentLocation.latitude},
   ${currentLocation.longitude},
@@ -151,7 +156,7 @@ drawRoute(
   );
 
 });
-  markers[driver.id] = marker;
+  markers[driver.userId] = marker;
 
 }
 
@@ -244,6 +249,10 @@ const bearing = getBearing(
     const response = await fetch(url);
 
     const data = await response.json();
+if (!data.routes || data.routes.length === 0) {
+  return;
+}
+
 const route = data.routes[0];
 
 const distance = route.distance;
@@ -313,6 +322,27 @@ window.ReactNativeWebView.postMessage(
   return bearing;
 
 }
+  function removeMarker(id) {
+
+  if (!markers[id]) return;
+
+  if (animations[markers[id]._leaflet_id]) {
+
+    cancelAnimationFrame(
+      animations[markers[id]._leaflet_id]
+    );
+
+    delete animations[
+      markers[id]._leaflet_id
+    ];
+
+  }
+
+  map.removeLayer(markers[id]);
+
+  delete markers[id];
+
+}
 function updateDrivers(drivers) {
   
    if (!Array.isArray(drivers)) return;
@@ -321,11 +351,11 @@ function updateDrivers(drivers) {
 
   drivers.forEach(driver => {
 
-    activeIds.push(driver.id);
+    activeIds.push(driver.userId);
 
-    if (markers[driver.id]) {
+    if (markers[driver.userId]) {
 
-      const marker = markers[driver.id];
+      const marker = markers[driver.userId];
 
       const current = marker.getLatLng();
 
@@ -340,7 +370,21 @@ function updateDrivers(drivers) {
           driver.latitude,
           driver.longitude
         );
+if (
+  selectedDriver &&
+  selectedDriver.userId === driver.userId
+) {
 
+  selectedDriver = driver;
+
+  drawRoute(
+    ${currentLocation.latitude},
+    ${currentLocation.longitude},
+    driver.latitude,
+    driver.longitude
+  );
+
+}
       }
 
     } else {

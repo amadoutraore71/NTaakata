@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
-export default function LeafletMap({ html,
-    drivers, onDriverSelected,
-  onRouteInfo}) {
+export default function LeafletMap({   html,
+  drivers,
+  onDriverSelected,
+  onRouteInfo,}) {
     const [mapReady, setMapReady] = useState(false);
 
     const webViewRef = useRef(null);
@@ -49,27 +50,24 @@ onMessage={(event) => {
   try {
 
     const data = JSON.parse(event.nativeEvent.data);
-if (data.type === "driver_selected") {
 
-  onDriverSelected?.(data.driver);
+    if (data.type === "driver_selected") {
+      onDriverSelected?.(data.driver);
+    }
 
-}
+    if (data.type === "route_info") {
+      onRouteInfo?.({
+        distance: data.distance,
+        duration: data.duration,
+      });
+    }
 
-if (data.type === "route_info") {
+    if (data.type === "error") {
+      console.log(data.message);
+    }
 
-  onRouteInfo?.({
-    distance: data.distance,
-    duration: data.duration
-  });
-
-}
-
-  } catch {
-
-    console.log(
-      event.nativeEvent.data
-    );
-
+  } catch (e) {
+    console.log(event.nativeEvent.data);
   }
 
 }}

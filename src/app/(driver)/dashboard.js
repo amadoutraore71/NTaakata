@@ -9,10 +9,12 @@ import {
 } from "react-native";
 
 import { router } from "expo-router";
-
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
+  onSnapshot,
   query,
   updateDoc,
   where,
@@ -28,13 +30,6 @@ export default function DriverDashboard() {
 
   const [loading, setLoading] =
     useState(true);
-
-  useEffect(() => {
-    checkSubscription();
-    loadStats();
-  }, []);
-
-
   const [isOnline, setIsOnline] =
     useState(false);
   const [totalRevenue, setTotalRevenue] =
@@ -44,155 +39,234 @@ export default function DriverDashboard() {
 
   const [totalRatings, setTotalRatings] =
     useState(0);
-  const [totalRides, setTotalRides] =
-    useState(0);
-  const checkSubscription = async () => {
-    try {
-      const user = await getUser();
-      console.log(user);
-      if (!user?.phone) {
-        setLoading(false);
-        return;
-      }
+  const [totalRides, setTotalRides] = useState(0);
+  const [incomingRide, setIncomingRide] = useState(null);
+useEffect(() => {
 
-      const q = query(
-        collection(db, "users"),
-        where("phone", "==", user.phone)
-      );
+  let unsubscribeRide;
 
-      const querySnapshot =
-        await getDocs(q);
+  const init = async () => {
 
-      if (querySnapshot.empty) {
-        setLoading(false);
-        return;
-      }
+    const driver = await getUser();
 
-      const driverDoc =
-        querySnapshot.docs[0];
-
-      const data =
-        driverDoc.data();
-      setAverageRating(
-        data.averageRating || 0
-      );
-
-      setTotalRatings(
-        data.totalRatings || 0
-      );
-
-      const valid =
-        isSubscriptionValid(
-          data.subscriptionExpiresAt
-        );
-
-      if (
-        !valid &&
-        data.subscriptionActive
-      ) {
-        await updateDoc(
-          driverDoc.ref,
-          {
-            subscriptionActive: false,
-          }
-        );
-      }
-
-      setSubscriptionActive(valid);
-      setIsOnline(
-        data.isOnline || false
-      );
+    if (!driver?.userId) {
 
       setLoading(false);
+      return;
 
-    } catch (error) {
-      console.log(error);
-      setLoading(false);
     }
+
+    await Promise.all([
+      checkSubscription(driver),
+      loadStats(driver),
+    ]);
+
+    unsubscribeRide =
+      listenIncomingRide(driver.userId);
+
+    setLoading(false);
+
   };
-  const loadStats = async () => {
+
+  init();
+
+  return () => {
+
+    if (unsubscribeRide) {
+      unsubscribeRide();
+    }
+
+  };
+
+}, []);
+const listenIncomingRide = (userId) => {
+
+  const q = query(
+    collection(db, "rides"),
+    where("driverId", "==", userId),
+    where("status", "==", "pending")
+  );
+
+  return onSnapshot(q, (snapshot) => {
+
+    if (snapshot.empty) {
+
+      setIncomingRide(null);
+
+      return;
+
+    }
+
+    const ride = {
+      id: snapshot.docs[0].id,
+      ...snapshot.docs[0].data(),
+    };
+
+    setIncomingRide(ride);
+
+  });
+
+};
+const initDashboard = async () => {
+
+  try {
+
+    const driver = await getUser();
+
+    if (!driver?.userId) {
+
+      setLoading(false);
+
+      return;
+
+    }
+
+    await Promise.all([
+
+      checkSubscription(driver),
+
+      loadStats(driver),
+
+    ]);
+
+  } catch (error) {
+
+    console.log(error);
+
+  } finally {
+
+    setLoading(false);
+
+  }
+
+};
+const checkSubscription = async (driver) => {
+
+  const driverRef = doc(
+    db,
+    "users",
+    driver.userId
+  );
+
+  const snapshot =
+    await getDoc(driverRef);
+
+  if (!snapshot.exists()) return;
+
+  const data = snapshot.data();
+
+  setAverageRating(
+    data.averageRating || 0
+  );
+
+  setTotalRatings(
+    data.totalRatings || 0
+  );
+
+  setIsOnline(
+    data.isOnline || false
+  );
+
+  const valid =
+    isSubscriptionValid(
+      data.subscriptionExpiresAt
+    );
+
+  if (
+    !valid &&
+    data.subscriptionActive
+  ) {
+
+    await updateDoc(
+      driverRef,
+      {
+        subscriptionActive: false,
+      }
+    );
+
+  }
+
+  setSubscriptionActive(valid);
+
+};
+const loadStats = async (driver) => {
+
+  const q = query(
+
+    collection(db, "rides"),
+
+    where(
+      "driverId",
+      "==",
+      driver.userId
+    )
+
+  );
+
+  const snapshot =
+    await getDocs(q);
+
+  let revenue = 0;
+
+  let rides = 0;
+
+  snapshot.forEach((document) => {
+
+    const ride = document.data();
+
+    if (
+      ride.status === "completed"
+    ) {
+
+      rides++;
+
+      revenue += Number(
+        ride.estimatedPrice || 0
+      );
+
+    }
+
+  });
+
+  setTotalRevenue(revenue);
+
+  setTotalRides(rides);
+
+};
+
+const toggleOnlineStatus =
+  async (value) => {
+
     try {
+
       const driver =
         await getUser();
 
-      if (!driver?.phone)
-        return;
+      if (!driver) return;
 
-      const querySnapshot =
-        await getDocs(
-          collection(db, "rides")
-        );
+      await updateDoc(
 
-      let revenue = 0;
-      let rides = 0;
+        doc(
+          db,
+          "users",
+          driver.userId
+        ),
 
-      querySnapshot.forEach(
-        (document) => {
-          const data =
-            document.data();
-
-          if (
-            data.driverPhone ===
-            driver.phone &&
-            data.status ===
-            "completed"
-          ) {
-            rides++;
-
-            revenue += Number(
-              data.price || 0
-            );
-          }
+        {
+          isOnline: value,
         }
+
       );
 
-      setTotalRevenue(
-        revenue
-      );
-
-      setTotalRides(
-        rides
-      );
+      setIsOnline(value);
 
     } catch (error) {
+
       console.log(error);
+
     }
+
   };
-  const toggleOnlineStatus =
-    async (value) => {
-      try {
-        const user =
-          await getUser();
-
-        if (!user?.phone) return;
-
-        const q = query(
-          collection(db, "users"),
-          where("phone", "==", user.phone)
-        );
-
-        const querySnapshot =
-          await getDocs(q);
-
-        if (querySnapshot.empty)
-          return;
-
-        const driverDoc =
-          querySnapshot.docs[0];
-
-        await updateDoc(
-          driverDoc.ref,
-          {
-            isOnline: value,
-          }
-        );
-
-        setIsOnline(value);
-
-      } catch (error) {
-        console.log(error);
-      }
-    };
 
 
   if (loading) {
@@ -350,6 +424,58 @@ export default function DriverDashboard() {
           Mes courses
         </Text>
       </TouchableOpacity>
+      {incomingRide && (
+
+<View style={styles.requestCard}>
+
+<Text style={styles.requestTitle}>
+🚖 Nouvelle demande
+</Text>
+
+<Text>
+👤 {incomingRide.passengerName}
+</Text>
+
+<Text>
+📞 {incomingRide.passengerPhone}
+</Text>
+
+<Text>
+💰 {incomingRide.estimatedPrice} FCFA
+</Text>
+
+<View
+style={{
+flexDirection:"row",
+marginTop:20
+}}
+>
+
+<TouchableOpacity
+style={styles.rejectButton}
+>
+
+<Text style={{color:"#FFF"}}>
+REFUSER
+</Text>
+
+</TouchableOpacity>
+
+<TouchableOpacity
+style={styles.acceptButton}
+>
+
+<Text style={{color:"#FFF"}}>
+ACCEPTER
+</Text>
+
+</TouchableOpacity>
+
+</View>
+
+</View>
+
+)}
     </SafeAreaView>
   );
 }
@@ -484,4 +610,40 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+  requestCard: {
+  position: "absolute",
+  left: 15,
+  right: 15,
+  bottom: 20,
+  backgroundColor: "#FFF",
+  borderRadius: 20,
+  padding: 20,
+  elevation: 12,
+},
+
+requestTitle: {
+  fontSize: 22,
+  fontWeight: "bold",
+  marginBottom: 15,
+},
+
+acceptButton: {
+  flex: 1,
+  backgroundColor: "#0B6E4F",
+  height: 50,
+  borderRadius: 10,
+  justifyContent: "center",
+  alignItems: "center",
+  marginLeft: 10,
+},
+
+rejectButton: {
+  flex: 1,
+  backgroundColor: "#E53935",
+  height: 50,
+  borderRadius: 10,
+  justifyContent: "center",
+  alignItems: "center",
+  marginRight: 10,
+},
 });

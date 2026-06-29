@@ -82,7 +82,7 @@ export default function Subscriptions() {
           drivers.map(
             (driver) => (
               <View
-                key={driver.id}
+                key={driver.userId}
                 style={
                   styles.card
                 }

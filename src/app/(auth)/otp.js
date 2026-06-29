@@ -110,78 +110,54 @@ export default function Otp() {
       try {
         const userId =
           Date.now().toString();
+          console.log("Avant setDoc");
+await setDoc(
+  doc(db, "users", userId),
+  {
+    userId: userId,
 
-        await setDoc(
-          doc(
-            db,
-            "users",
-            userId
-          ),
-          {
+    name: fullName,
 
-            name: fullName,
+    phone: phone,
 
-            phone: phone,
+    role: role,
 
-            role: role,
+    vehicleType: vehicleType || null,
 
-            vehicleType:
-              vehicleType || null,
+    vehicleBrand: vehicleBrand || null,
 
-            vehicleBrand:
-              vehicleBrand || null,
+    vehicleModel: vehicleModel || null,
 
-            vehicleModel:
-              vehicleModel || null,
-            airConditioned:
-              airConditioned === "true",
+    airConditioned: airConditioned === "true",
 
-            vehicleColor:
-              vehicleColor || null,
+    vehicleColor: vehicleColor || null,
 
-            plateNumber:
-              plateNumber || null,
+    plateNumber: plateNumber || null,
 
-            seats:
-              seats || null,
-            subscriptionActive:
-              role ===
-                "driver"
-                ? false
-                : true,
+    seats: seats || null,
 
-            subscriptionPaidAt:
-              null,
+    subscriptionActive:
+      role === "driver" ? false : true,
 
-            subscriptionExpiresAt:
-              null,
+    subscriptionPaidAt: null,
 
-            dailyFee:
-              role ===
-                "driver"
-                ? 100
-                : 0,
-            totalRides: 0,
-            isOnline: false,
-            latitude: null,
-            longitude: null,
-            createdAt:
-              new Date().toISOString(),
-          }
-        );
-        console.log({
-          userId,
-          name: fullName,
-          phone,
-          role,
-          vehicleType,
-          vehicleBrand,
-          vehicleModel,
-          vehicleColor,
-          plateNumber,
-          seats,
-          airConditioned,
-        });
+    subscriptionExpiresAt: null,
+
+    dailyFee:
+      role === "driver" ? 100 : 0,
+
+    totalRides: 0,
+
+    isOnline: false,
+
+    latitude: null,
+
+    longitude: null,
+
+    createdAt: new Date().toISOString(),
+  }
+);
+        console.log("Après setDoc");
         await saveUser({
           userId,
           name: fullName,
@@ -196,16 +172,23 @@ export default function Otp() {
           airConditioned:
             airConditioned === "true",
         });
+        console.log("Après saveUser");
+
+console.log("Role =", role);
+
 
         Alert.alert(
           "Succès",
           "Compte créé avec succès"
         );
+        console.log("role =", role);
+console.log("typeof role =", typeof role);
 
         if (
           role ===
           "passenger"
         ) {
+          console.log("Redirection PASSAGER");
           router.replace(
             "/(passenger)/home"
           );
@@ -216,6 +199,7 @@ export default function Otp() {
           role ===
           "driver"
         ) {
+          console.log("Redirection CONDUCTEUR");
           router.replace(
             "/(driver)/dashboard"
           );

@@ -5,12 +5,13 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
 import { Asset } from "expo-asset";
 import * as Location from "expo-location";
-
+import { router } from "expo-router";
 import {
   collection,
   onSnapshot,
@@ -20,10 +21,13 @@ import {
 
 import { db } from "../../../firebase/config";
 
+import { createRide } from "../../../services/rideService";
 import LeafletMap from "../../components/LeafletMap";
+import { getUser } from "../../storage/userStorage";
+import { calculateFare } from "../../utils/fareCalculator";
 import generateLeafletHtml from "../../utils/leafletHtml";
-
 export default function DriversMap() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const [drivers, setDrivers] = useState([]);
@@ -32,18 +36,29 @@ export default function DriversMap() {
 
   const [currentLocation, setCurrentLocation] =
     useState(null);
-  const [selectedDriver, setSelectedDriver] =
-    useState(null);
 
-  const [routeInfo, setRouteInfo] =
-    useState(null);
+  const [selectedDriver, setSelectedDriver] = useState(null);
 
+  const [routeInfo, setRouteInfo] = useState(null);
   const [icons, setIcons] = useState({
     car: "",
     moto: "",
     passenger: "",
   });
 
+  useEffect(() => {
+
+    const loadUser = async () => {
+
+      const user = await getUser();
+
+      setCurrentUser(user);
+
+    };
+
+    loadUser();
+
+  }, []);
   useEffect(() => {
     let unsubscribe;
 
@@ -161,7 +176,7 @@ export default function DriversMap() {
                   data.longitude
                 ) {
                   list.push({
-                    id: doc.id,
+                    docId: doc.id,
                     ...data,
                     iconCar: carAsset.uri,
                     iconMoto: motoAsset.uri,
@@ -195,6 +210,58 @@ export default function DriversMap() {
     );
   }
 
+  const handleOrderRide = async () => {
+
+    if (!currentUser) {
+      console.log("Utilisateur non connecté");
+      return;
+    }
+
+    if (!selectedDriver || !routeInfo) {
+      return;
+    }
+
+    try {
+
+      const price = calculateFare(
+        routeInfo.distance
+      );
+console.log("Conducteur sélectionné :", selectedDriver);
+console.log("Passager :", currentUser);
+      const rideId = await createRide({
+
+        passenger: currentUser,
+
+        driver: selectedDriver,
+
+        pickup: currentLocation,
+
+        // Destination à ajouter plus tard
+        destination: null,
+
+        distance: routeInfo.distance,
+
+        duration: routeInfo.duration,
+
+        price,
+
+      });
+
+      console.log("Course créée :", rideId);
+      router.push({
+        pathname: "/(passenger)/ride-status",
+        params: {
+          rideId,
+        },
+      });
+
+    } catch (error) {
+
+      console.log("Erreur :", error);
+
+    }
+
+  };
   return (
     <SafeAreaView
       style={styles.container}
@@ -205,31 +272,48 @@ export default function DriversMap() {
         onDriverSelected={setSelectedDriver}
         onRouteInfo={setRouteInfo}
       />
-      {
-        selectedDriver &&
-        routeInfo && (
+      {selectedDriver && routeInfo && (
 
-          <View style={styles.driverCard}>
+        <View style={styles.driverCard}>
 
-            <Text style={styles.name}>
-              {selectedDriver.name}
+          <Text style={styles.driverName}>
+            {selectedDriver.name}
+          </Text>
+
+          <Text>
+            ⭐ {selectedDriver.averageRating || 5}/5
+          </Text>
+
+          <Text>
+            🚗 {selectedDriver.vehicleBrand}
+          </Text>
+
+          <Text>
+            🎨 {selectedDriver.vehicleColor}
+          </Text>
+
+          <Text>
+            📍 {(routeInfo.distance / 1000).toFixed(1)} km
+          </Text>
+
+          <Text>
+            ⏱ {Math.ceil(routeInfo.duration / 60)} min
+          </Text>
+
+          <TouchableOpacity
+            style={styles.orderButton}
+            onPress={handleOrderRide}
+          >
+
+            <Text style={styles.orderText}>
+              COMMANDER
             </Text>
 
-            <Text>
-              📍 {(routeInfo.distance / 1000).toFixed(1)} km
-            </Text>
+          </TouchableOpacity>
 
-            <Text>
-              ⏱ {Math.ceil(routeInfo.duration / 60)} min
-            </Text>
+        </View>
 
-            <Text>
-              🚗 {selectedDriver.vehicleBrand}
-            </Text>
-
-          </View>
-
-        )}
+      )}
     </SafeAreaView>
   );
 }
@@ -249,31 +333,84 @@ const styles =
     },
     driverCard: {
 
-  position: "absolute",
+      position: "absolute",
 
-  bottom: 20,
+      bottom: 20,
 
-  left: 15,
+      left: 15,
 
-  right: 15,
+      right: 15,
 
-  backgroundColor: "#FFF",
+      backgroundColor: "#FFF",
 
-  borderRadius: 18,
+      borderRadius: 18,
 
-  padding: 18,
+      padding: 18,
 
-  elevation: 8,
+      elevation: 8,
 
-},
+    },
 
-name: {
+    name: {
 
-  fontSize: 18,
+      fontSize: 18,
 
-  fontWeight: "bold",
+      fontWeight: "bold",
 
-  marginBottom: 10,
+      marginBottom: 10,
 
-},
+    },
+    driverCard: {
+
+      position: "absolute",
+
+      left: 15,
+
+      right: 15,
+
+      bottom: 20,
+
+      backgroundColor: "#FFF",
+
+      borderRadius: 20,
+
+      padding: 18,
+
+      elevation: 8,
+
+    },
+
+    driverName: {
+
+      fontSize: 20,
+
+      fontWeight: "bold",
+
+      marginBottom: 10,
+
+    },
+
+    orderButton: {
+
+      marginTop: 20,
+
+      backgroundColor: "#0B6E4F",
+
+      borderRadius: 12,
+
+      paddingVertical: 14,
+
+      alignItems: "center",
+
+    },
+
+    orderText: {
+
+      color: "#FFF",
+
+      fontWeight: "bold",
+
+      fontSize: 17,
+
+    },
   });

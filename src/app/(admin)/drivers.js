@@ -77,7 +77,7 @@ export default function Drivers() {
         ) : (
           drivers.map((driver) => (
             <View
-              key={driver.id}
+              key={driver.userId}
               style={styles.card}
             >
               <Text style={styles.name}>
