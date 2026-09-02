@@ -24,21 +24,28 @@ import {
 } from "react-native-safe-area-context";
 
 import {
+    collection,
     doc,
     onSnapshot,
+    query,
     serverTimestamp,
     updateDoc,
+    where,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
 
 import {
-    debugAcceptRide,
     debugCancelRide,
     debugFinishRide,
     debugResetRide,
     debugSimulateRide,
 } from "../../../services/debugService";
+
+import {
+    acceptRideRequest,
+    rejectRideRequest,
+} from "../../../services/matching/rideRequestService";
 
 import {
     findAvailableDrivers,
@@ -58,19 +65,24 @@ import RideTrackingMap from "../../components/ride/RideTrackingMap";
 
 
 export default function RideStatus() {
+
   const { rideId } =
     useLocalSearchParams();
+
 
   const [ride, setRide] =
     useState(null);
 
+
   const [driver, setDriver] =
     useState(null);
+
 
   const [
     passengerLocation,
     setPassengerLocation,
   ] = useState(null);
+
 
   const [
     routeInfo,
@@ -81,12 +93,23 @@ export default function RideStatus() {
     eta: null,
   });
 
+
   // IMPORTANT :
   // Cette liste ne doit jamais être vidée
   // simplement parce que la recherche est terminée.
   const [
     nearbyDrivers,
     setNearbyDrivers,
+  ] = useState([]);
+
+
+  // =====================================================
+  // DEMANDES DE COURSE BROADCAST
+  // =====================================================
+
+  const [
+    rideRequests,
+    setRideRequests,
   ] = useState([]);
 
 
@@ -107,14 +130,18 @@ export default function RideStatus() {
   // =====================================================
 
   useEffect(() => {
+
     if (!rideId) {
       return;
     }
 
+
     const unsubscribe = onSnapshot(
       doc(db, "rides", rideId),
       (snapshot) => {
+
         if (!snapshot.exists()) {
+
           console.log(
             "❌ Course introuvable :",
             rideId
@@ -123,19 +150,24 @@ export default function RideStatus() {
           return;
         }
 
+
         const rideData = {
           id: snapshot.id,
           ...snapshot.data(),
         };
+
 
         console.log(
           "🚕 Ride :",
           rideData
         );
 
+
         setRide(rideData);
 
+
         if (rideData.pickup) {
+
           setPassengerLocation({
             latitude:
               rideData.pickup.latitude,
@@ -143,11 +175,96 @@ export default function RideStatus() {
             longitude:
               rideData.pickup.longitude,
           });
+
         }
+
       }
     );
 
+
     return unsubscribe;
+
+  }, [rideId]);
+
+
+  // =====================================================
+  // ÉCOUTER LES DEMANDES BROADCAST
+  // =====================================================
+
+  useEffect(() => {
+
+    if (!rideId) {
+
+      setRideRequests([]);
+
+      return;
+    }
+
+
+    const requestsQuery = query(
+      collection(
+        db,
+        "ride_requests"
+      ),
+
+      where(
+        "rideId",
+        "==",
+        rideId
+      )
+    );
+
+
+    const unsubscribe = onSnapshot(
+      requestsQuery,
+
+      (snapshot) => {
+
+        const requests =
+          snapshot.docs
+            .map((item) => ({
+              id: item.id,
+              ...item.data(),
+            }))
+
+            .sort(
+              (a, b) =>
+                Number(
+                  a.driverDistance ??
+                  Infinity
+                ) -
+                Number(
+                  b.driverDistance ??
+                  Infinity
+                )
+            );
+
+
+        console.log(
+          "🧪 RideStatus - demandes broadcast :",
+          requests
+        );
+
+
+        setRideRequests(
+          requests
+        );
+
+      },
+
+      (error) => {
+
+        console.log(
+          "❌ Erreur écoute ride_requests :",
+          error
+        );
+
+      }
+    );
+
+
+    return unsubscribe;
+
   }, [rideId]);
 
 
@@ -156,51 +273,70 @@ export default function RideStatus() {
   // =====================================================
 
   useEffect(() => {
+
     if (!ride?.driverId) {
+
       setDriver(null);
+
       return;
     }
+
 
     console.log(
       "🔎 Recherche conducteur accepté :",
       ride.driverId
     );
 
+
     const unsubscribe = onSnapshot(
+
       doc(
         db,
         "users",
         ride.driverId
       ),
+
       (snapshot) => {
+
         if (!snapshot.exists()) {
+
           console.log(
             "❌ Conducteur introuvable :",
             ride.driverId
           );
 
           setDriver(null);
+
           return;
         }
 
+
         const data =
           snapshot.data();
+
 
         const driverData = {
           docId: snapshot.id,
           ...data,
         };
 
+
         console.log(
           "✅ Conducteur accepté :",
           driverData.name
         );
 
-        setDriver(driverData);
+
+        setDriver(
+          driverData
+        );
+
       }
     );
 
+
     return unsubscribe;
+
   }, [ride?.driverId]);
 
 
@@ -209,7 +345,9 @@ export default function RideStatus() {
   // =====================================================
 
   useEffect(() => {
+
     async function loadDrivers() {
+
       if (
         !passengerLocation ||
         !ride ||
@@ -218,39 +356,49 @@ export default function RideStatus() {
         return;
       }
 
+
       try {
+
         const drivers =
           await findAvailableDrivers(
             passengerLocation,
             ride.vehicleType
           );
 
+
         console.log(
           "🚕 Conducteurs disponibles :",
           drivers.length
         );
+
 
         console.log(
           "🚕 Liste conducteurs :",
           drivers
         );
 
+
         // IMPORTANT :
         // On conserve la liste.
-        // Elle ne sera PAS remise à [] lorsque
-        // ride.status deviendra search_timeout
-        // ou search_failed.
+        // Elle ne sera PAS remise à []
+        // lorsque la recherche se termine.
+
         setNearbyDrivers(
           drivers
         );
 
+
       } catch (error) {
+
         console.log(
           "❌ Erreur chargement conducteurs :",
           error
         );
+
       }
+
     }
+
 
     loadDrivers();
 
@@ -266,6 +414,7 @@ export default function RideStatus() {
   // =====================================================
 
   useEffect(() => {
+
     if (
       ride?.status !==
       "completed"
@@ -273,19 +422,27 @@ export default function RideStatus() {
       return;
     }
 
+
     router.replace({
+
       pathname:
         "/(passenger)/rate-driver",
 
       params: {
-        rideId: ride.id,
+
+        rideId:
+          ride.id,
 
         driverPhone:
-          ride.driverPhone ?? "",
+          ride.driverPhone ??
+          "",
 
         driverName:
-          ride.driverName ?? "",
+          ride.driverName ??
+          "",
+
       },
+
     });
 
   }, [ride?.status]);
@@ -297,25 +454,98 @@ export default function RideStatus() {
 
   const handleCancelRide =
     async () => {
+
       if (!ride?.id) {
         return;
       }
 
+
       try {
+
         await cancelRide(
           ride.id
         );
+
 
         router.replace(
           "/(passenger)"
         );
 
+
       } catch (error) {
+
         console.log(
           "❌ Erreur annulation :",
           error
         );
+
       }
+
+    };
+
+
+  // =====================================================
+  // DEBUG : ACCEPTER UNE DEMANDE
+  // =====================================================
+
+  const handleDebugAcceptRequest =
+    async (requestId) => {
+
+      try {
+
+        const result =
+          await acceptRideRequest(
+            requestId
+          );
+
+
+        console.log(
+          "🧪 Résultat acceptation :",
+          result
+        );
+
+
+      } catch (error) {
+
+        console.log(
+          "❌ Erreur test acceptation :",
+          error
+        );
+
+      }
+
+    };
+
+
+  // =====================================================
+  // DEBUG : REFUSER UNE DEMANDE
+  // =====================================================
+
+  const handleDebugRejectRequest =
+    async (requestId) => {
+
+      try {
+
+        await rejectRideRequest(
+          requestId
+        );
+
+
+        console.log(
+          "🧪 Demande refusée :",
+          requestId
+        );
+
+
+      } catch (error) {
+
+        console.log(
+          "❌ Erreur test refus :",
+          error
+        );
+
+      }
+
     };
 
 
@@ -337,6 +567,7 @@ export default function RideStatus() {
     !ride?.driverId &&
     ride?.currentSearchingDriverId
       ? {
+
           id:
             ride.currentSearchingDriverId,
 
@@ -358,7 +589,9 @@ export default function RideStatus() {
 
           vehicleType:
             ride.currentSearchingDriverVehicleType,
+
         }
+
       : null;
 
 
@@ -379,6 +612,7 @@ export default function RideStatus() {
   const searchFinished =
     ride?.status ===
       "search_timeout" ||
+
     ride?.status ===
       "search_failed";
 
@@ -390,16 +624,22 @@ export default function RideStatus() {
   console.log(
     "🔎 RideStatus :",
     {
-      status: ride?.status,
+
+      status:
+        ride?.status,
 
       nearbyDrivers:
         nearbyDrivers.length,
+
+      rideRequests:
+        rideRequests.length,
 
       searchingDriver:
         searchingDriver?.name,
 
       acceptedDriver:
         displayedDriver?.name,
+
     }
   );
 
@@ -409,23 +649,31 @@ export default function RideStatus() {
   // =====================================================
 
   if (!ride) {
+
     return (
+
       <SafeAreaView
         style={
           styles.container
         }
       >
+
         <View
           style={
             styles.loadingContainer
           }
         >
+
           <Text>
             Chargement de la course...
           </Text>
+
         </View>
+
       </SafeAreaView>
+
     );
+
   }
 
 
@@ -434,17 +682,25 @@ export default function RideStatus() {
   // =====================================================
 
   return (
+
     <GestureHandlerRootView
-      style={styles.container}
+      style={
+        styles.container
+      }
     >
+
       <SafeAreaView
-        style={styles.container}
+        style={
+          styles.container
+        }
       >
 
         {/* ================= CARTE ================= */}
 
         {passengerLocation && (
+
           <RideTrackingMap
+
             mode={
               trackingStatuses.includes(
                 ride.status
@@ -453,13 +709,18 @@ export default function RideStatus() {
                 : "drivers"
             }
 
+
             passengerLocation={
               passengerLocation
             }
 
+
             driverLocation={
+
               displayedDriver
+
                 ? {
+
                     docId:
                       displayedDriver.docId,
 
@@ -477,51 +738,59 @@ export default function RideStatus() {
 
                     vehicleType:
                       displayedDriver.vehicleType,
+
                   }
+
                 : null
+
             }
+
 
             /*
              * IMPORTANT :
              *
-             * On envoie TOUJOURS nearbyDrivers.
+             * On envoie TOUJOURS
+             * nearbyDrivers.
              *
              * Même lorsque :
              *
              * search_timeout
              * search_failed
              *
-             * Les conducteurs restent donc
-             * visibles sur la carte.
+             * Les conducteurs restent
+             * donc visibles sur la carte.
              */
+
             drivers={
               nearbyDrivers
             }
 
+
             /*
-             * La ligne de recherche est
-             * uniquement liée à isSearching.
-             *
-             * Lorsque la recherche se termine :
-             *
-             * searchingDriver = null
-             *
-             * Leaflet doit alors supprimer
-             * uniquement la ligne.
+             * La ligne de recherche
+             * est uniquement liée
+             * à isSearching.
              */
+
             searchingDriver={
+
               isSearching
                 ? searchingDriver
                 : null
+
             }
+
 
             onDriverSelected={
               () => {}
             }
 
+
             onRouteInfo={
               (route) => {
+
                 setRouteInfo({
+
                   distance:
                     route.distance,
 
@@ -534,10 +803,15 @@ export default function RideStatus() {
                           route.eta
                         )
                       : null,
+
                 });
+
               }
+
             }
+
           />
+
         )}
 
 
@@ -548,39 +822,55 @@ export default function RideStatus() {
             styles.bottomBanner
           }
         >
+
           <RideStatusBanner
+
             status={
               ride.status
             }
 
+
             driverName={
+
               ride.driverId
+
                 ? driver?.name
+
                 : isSearching
+
                   ? searchingDriver?.name
+
                   : null
+
             }
+
 
             onCancel={
               handleCancelRide
             }
+
           />
+
         </View>
+                
 
 
         {/* ============ RECHERCHE TERMINÉE ============ */}
 
         {searchFinished && (
+
           <View
             style={
               styles.searchFinishedContainer
             }
           >
+
             <View
               style={
                 styles.searchFinishedCard
               }
             >
+
               <Text
                 style={
                   styles.searchFinishedTitle
@@ -588,6 +878,7 @@ export default function RideStatus() {
               >
                 Aucun conducteur trouvé
               </Text>
+
 
               <Text
                 style={
@@ -597,16 +888,19 @@ export default function RideStatus() {
                 Aucun conducteur n'a accepté votre course.
               </Text>
 
+
               <TouchableOpacity
                 style={
                   styles.searchFinishedButton
                 }
+
                 onPress={() =>
                   router.replace(
                     "/(passenger)"
                   )
                 }
               >
+
                 <Text
                   style={
                     styles.searchFinishedButtonText
@@ -614,9 +908,13 @@ export default function RideStatus() {
                 >
                   Retour à l'accueil
                 </Text>
+
               </TouchableOpacity>
+
             </View>
+
           </View>
+
         )}
 
 
@@ -624,90 +922,175 @@ export default function RideStatus() {
 
         {__DEV__ &&
           ride?.id && (
+
             <View
               style={
                 styles.developerPanel
               }
             >
+
               <DeveloperPanel
+
+                /*
+                 * Toutes les demandes broadcast
+                 * créées dans ride_requests.
+                 *
+                 * Elles sont classées par distance.
+                 */
+
+                rideRequests={
+                  rideRequests
+                }
+
+
+                /*
+                 * Lorsqu'on appuie sur
+                 * "Accepter" pour une demande.
+                 */
+
+                onAcceptRequest={
+                  handleDebugAcceptRequest
+                }
+
+
+                /*
+                 * Lorsqu'on appuie sur
+                 * "Refuser" pour une demande.
+                 */
+
+                onRejectRequest={
+                  handleDebugRejectRequest
+                }
+
+
+                /*
+                 * Ancien bouton :
+                 * Simuler une course
+                 */
 
                 onSimulateRide={
                   async () => {
+
                     try {
+
                       if (
                         ride.status ===
                         "search_failed"
                       ) {
+
                         console.log(
                           "❌ La recherche a déjà échoué."
                         );
 
                         return;
+
                       }
+
 
                       if (
                         !nearbyDrivers.length
                       ) {
+
                         console.log(
                           "❌ Aucun conducteur disponible."
                         );
 
                         return;
+
                       }
 
+
                       await debugSimulateRide(
+
                         ride.id,
+
                         nearbyDrivers[0]
+
                       );
 
+
                     } catch (error) {
+
                       console.log(
                         error
                       );
+
                     }
+
                   }
                 }
 
 
+                /*
+                 * Ancien bouton :
+                 * Accepter la course
+                 *
+                 * On conserve ce bouton
+                 * pour les anciens tests.
+                 */
+
                 onAcceptRide={
                   async () => {
+
                     try {
+
                       const selectedDriver =
                         nearbyDrivers.find(
+
                           (d) =>
                             d.id ===
                             ride.currentSearchingDriverId
+
                         ) || null;
+
 
                       if (
                         !selectedDriver
                       ) {
+
                         console.log(
                           "❌ Aucun conducteur."
                         );
 
                         return;
+
                       }
 
-                      await debugAcceptRide(
+
+                      /*
+                       * Ancienne simulation
+                       * d'acceptation.
+                       */
+
+                      await debugSimulateRide(
+
                         ride.id,
+
                         selectedDriver
+
                       );
 
+
                       await updateDoc(
+
                         doc(
                           db,
                           "rides",
                           ride.id
                         ),
+
                         {
+
                           status:
                             "driver_arriving",
 
                           driverArrivingAt:
                             serverTimestamp(),
+
                         }
+
                       );
+
 
                       console.log(
                         "🚕 Conducteur sélectionné :",
@@ -715,133 +1098,234 @@ export default function RideStatus() {
                       );
 
 
+                      /*
+                       * Simulation du déplacement
+                       * du conducteur.
+                       */
+
                       await startDriverMovement({
+
                         driverId:
                           selectedDriver.id,
 
+
                         startLocation: {
+
                           latitude:
                             selectedDriver.latitude,
 
                           longitude:
                             selectedDriver.longitude,
+
                         },
 
+
                         endLocation: {
+
                           latitude:
                             ride.pickup.latitude,
 
                           longitude:
                             ride.pickup.longitude,
+
                         },
+
 
                         onFinished:
                           async () => {
+
                             await updateDoc(
+
                               doc(
                                 db,
                                 "rides",
                                 ride.id
                               ),
+
                               {
+
                                 status:
                                   "started",
 
                                 startedAt:
                                   serverTimestamp(),
+
                               }
+
                             );
+
 
                             console.log(
                               "🚗 Conducteur arrivé."
                             );
+
                           },
+
                       });
 
+
                     } catch (error) {
+
                       console.log(
                         error
                       );
+
                     }
+
                   }
                 }
 
 
+                /*
+                 * Bouton :
+                 * Terminer la course
+                 */
+
                 onFinishRide={
                   async () => {
+
                     try {
+
                       await debugFinishRide(
                         ride.id
                       );
+
 
                       console.log(
                         "🏁 Course terminée"
                       );
 
+
                     } catch (error) {
+
                       console.log(
                         error
                       );
+
                     }
+
                   }
                 }
 
 
+                /*
+                 * Bouton :
+                 * Annuler la course
+                 */
+
                 onCancelRide={
                   async () => {
+
                     try {
+
                       await debugCancelRide(
                         ride.id
                       );
+
 
                       console.log(
                         "❌ Course annulée"
                       );
 
+
                     } catch (error) {
+
                       console.log(
                         error
                       );
+
                     }
+
                   }
                 }
 
 
+                /*
+                 * Bouton :
+                 * Réinitialiser
+                 */
+
                 onResetRide={
                   async () => {
+
                     try {
+
                       await debugResetRide(
                         ride.id
                       );
+
 
                       console.log(
                         "🔄 Course réinitialisée"
                       );
 
+
                     } catch (error) {
+
                       console.log(
                         error
                       );
+
                     }
+
                   }
                 }
 
 
+                /*
+                 * Simulation d'une demande.
+                 */
+
                 onIncomingRide={
                   () => {
+
                     console.log(
                       "📞 Simulation demande"
                     );
+
+                  }
+                }
+
+
+                /*
+                 * Ces deux callbacks sont conservés
+                 * pour garder DeveloperPanel
+                 * compatible avec sa nouvelle version.
+                 */
+
+                onMoveDriver={
+                  () => {
+
+                    console.log(
+                      "📍 Déplacement conducteur"
+                    );
+
+                  }
+                }
+
+
+                onStartRide={
+                  () => {
+
+                    console.log(
+                      "🚗 Démarrage course"
+                    );
+
                   }
                 }
 
               />
+
             </View>
+
           )}
 
       </SafeAreaView>
+
     </GestureHandlerRootView>
+
   );
+
 }
 
 
@@ -853,78 +1337,169 @@ const styles =
   StyleSheet.create({
 
     container: {
+
       flex: 1,
-      backgroundColor: "#FFF",
+
+      backgroundColor:
+        "#FFF",
+
     },
+
 
     loadingContainer: {
+
       flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
+
+      justifyContent:
+        "center",
+
+      alignItems:
+        "center",
+
     },
+
 
     bottomBanner: {
-      position: "absolute",
+
+      position:
+        "absolute",
+
       left: 16,
+
       right: 16,
+
       bottom: 30,
+
       zIndex: 200,
+
     },
+
 
     developerPanel: {
-      position: "absolute",
+
+      position:
+        "absolute",
+
       left: 0,
+
       right: 0,
+
       bottom: 0,
+
       zIndex: 300,
+
     },
+
 
     searchFinishedContainer: {
-      position: "absolute",
+
+      position:
+        "absolute",
+
       left: 20,
+
       right: 20,
+
       bottom: 100,
+
       zIndex: 250,
+
     },
+
 
     searchFinishedCard: {
-      backgroundColor: "#FFFFFF",
-      borderRadius: 18,
-      padding: 20,
-      elevation: 8,
-      shadowOpacity: 0.15,
-      shadowRadius: 10,
+
+      backgroundColor:
+        "#FFFFFF",
+
+      borderRadius:
+        18,
+
+      padding:
+        20,
+
+      elevation:
+        8,
+
+      shadowOpacity:
+        0.15,
+
+      shadowRadius:
+        10,
+
       shadowOffset: {
+
         width: 0,
+
         height: 4,
+
       },
+
     },
+
 
     searchFinishedTitle: {
-      fontSize: 19,
-      fontWeight: "700",
-      textAlign: "center",
-      marginBottom: 8,
+
+      fontSize:
+        19,
+
+      fontWeight:
+        "700",
+
+      textAlign:
+        "center",
+
+      marginBottom:
+        8,
+
     },
+
 
     searchFinishedText: {
-      fontSize: 15,
-      textAlign: "center",
-      color: "#666",
-      marginBottom: 18,
+
+      fontSize:
+        15,
+
+      textAlign:
+        "center",
+
+      color:
+        "#666",
+
+      marginBottom:
+        18,
+
     },
+
 
     searchFinishedButton: {
-      backgroundColor: "#0B6E4F",
-      borderRadius: 12,
-      paddingVertical: 13,
-      alignItems: "center",
+
+      backgroundColor:
+        "#0B6E4F",
+
+      borderRadius:
+        12,
+
+      paddingVertical:
+        13,
+
+      alignItems:
+        "center",
+
     },
 
+
     searchFinishedButtonText: {
-      color: "#FFFFFF",
-      fontSize: 15,
-      fontWeight: "700",
+
+      color:
+        "#FFFFFF",
+
+      fontSize:
+        15,
+
+      fontWeight:
+        "700",
+
     },
 
   });

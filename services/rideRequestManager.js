@@ -7,380 +7,461 @@ import {
 
 import { db } from "../firebase/config";
 
-import { getMatchingSettings } from "./configService";
-import { sendRideToNextDriver } from "./rideMatchingEngine";
 
 // ======================================================
-// Timers actifs
+// TIMER GLOBAL DE RECHERCHE
+// ======================================================
+
+// 60 secondes
+const SEARCH_TIMEOUT = 60 * 1000;
+
+
+// ======================================================
+// TIMERS ACTIFS
+// ======================================================
+//
+// Un seul timer par COURSE.
+// La clé est donc rideId et non requestId.
+//
 // ======================================================
 
 const activeTimers = new Map();
 
+
 // ======================================================
-// Lance le timer d'une demande
+// DÉMARRER LE TIMER GLOBAL D'UNE COURSE
 // ======================================================
 
-export async function startRideRequestTimer(
-  requestId
-) {
+export async function startRideSearchTimer(rideId) {
+
   console.log(
-    "🚀 startRideRequestTimer :",
-    requestId
+    "🚀 startRideSearchTimer :",
+    rideId
   );
 
+
   // ====================================================
-  // Si un timer existe déjà pour cette demande
+  // Supprimer un éventuel ancien timer
   // ====================================================
 
   const existingTimer =
-    activeTimers.get(requestId);
+    activeTimers.get(rideId);
 
   if (existingTimer) {
+
     clearTimeout(existingTimer);
 
-    activeTimers.delete(requestId);
+    activeTimers.delete(rideId);
 
     console.log(
       "♻️ Ancien timer supprimé :",
-      requestId
+      rideId
     );
   }
 
+
   // ====================================================
-  // Récupérer la demande
+  // RÉCUPÉRER LA COURSE
   // ====================================================
 
-  const requestRef = doc(
-    db,
-    "ride_requests",
-    requestId
-  );
+  const rideRef =
+    doc(
+      db,
+      "rides",
+      rideId
+    );
 
-  const requestSnap =
-    await getDoc(requestRef);
+  const rideSnap =
+    await getDoc(rideRef);
 
-  if (!requestSnap.exists()) {
+
+  if (!rideSnap.exists()) {
+
     console.log(
-      "❌ Demande introuvable :",
-      requestId
+      "❌ Course introuvable :",
+      rideId
     );
 
     return;
   }
 
-  const request =
-    requestSnap.data();
+
+  const ride =
+    rideSnap.data();
+
 
   // ====================================================
-  // Paramètres du matching
+  // VÉRIFIER QUE LA COURSE EST EN RECHERCHE
   // ====================================================
 
-  const settings =
-    await getMatchingSettings();
-
-  const timeoutSeconds =
-    request.vehicleType?.toLowerCase() ===
-    "moto"
-      ? settings?.requestTimeoutMoto ?? 10
-      : settings?.requestTimeoutVoiture ?? 15;
-
-  const requestTimeout =
-    timeoutSeconds * 1000;
-
-  console.log(
-    `⏱ ${request.vehicleType} : ${timeoutSeconds} secondes`
-  );
-
-  // ====================================================
-  // Créer le timer
-  // ====================================================
-
-  const timer = setTimeout(
-    async () => {
-      try {
-        console.log(
-          "⏰ TIMER EXPIRÉ :",
-          requestId
-        );
-
-        // ==============================================
-        // Recharger la demande
-        // ==============================================
-
-        const latestRequestSnap =
-          await getDoc(requestRef);
-
-        if (!latestRequestSnap.exists()) {
-          console.log(
-            "❌ Demande introuvable."
-          );
-
-          return;
-        }
-
-        const latestRequest =
-          latestRequestSnap.data();
-
-        // ==============================================
-        // Récupérer la course
-        // ==============================================
-
-        const rideRef = doc(
-          db,
-          "rides",
-          latestRequest.rideId
-        );
-
-        const rideSnap =
-          await getDoc(rideRef);
-
-        if (!rideSnap.exists()) {
-          console.log(
-            "❌ Course introuvable."
-          );
-
-          return;
-        }
-
-        const ride =
-          rideSnap.data();
-
-        // ==============================================
-        // COURSE ANNULÉE
-        // ==============================================
-
-        if (
-          ride.status === "cancelled"
-        ) {
-          console.log(
-            "⛔ Course annulée."
-          );
-
-          return;
-        }
-
-        // ==============================================
-        // COURSE DÉJÀ PRISE
-        // ==============================================
-
-        if (
-          [
-            "accepted",
-            "driver_arriving",
-            "arrived",
-            "started",
-            "completed",
-          ].includes(ride.status)
-        ) {
-          console.log(
-            "✅ Course déjà prise."
-          );
-
-          return;
-        }
-
-        // ==============================================
-        // DEMANDE DÉJÀ TRAITÉE
-        // ==============================================
-
-        if (
-          latestRequest.status !==
-          "pending"
-        ) {
-          console.log(
-            "ℹ️ Demande déjà traitée :",
-            latestRequest.status
-          );
-
-          return;
-        }
-
-        // ==============================================
-        // 🔴 PROTECTION IMPORTANTE
-        //
-        // Vérifier que cette demande est toujours
-        // celle actuellement recherchée.
-        // ==============================================
-
-        if (
-          ride.currentSearchingRequestId &&
-          ride.currentSearchingRequestId !==
-            requestId
-        ) {
-          console.log(
-            "⛔ ANCIEN TIMER IGNORÉ"
-          );
-
-          console.log(
-            "🆔 Timer :",
-            requestId
-          );
-
-          console.log(
-            "🆔 Demande actuelle :",
-            ride.currentSearchingRequestId
-          );
-
-          return;
-        }
-
-        // ==============================================
-        // Le conducteur actuel a expiré
-        // ==============================================
-
-        console.log(
-          "⏰ Temps écoulé pour :",
-          latestRequest.driverName
-        );
-
-        // ==============================================
-        // Marquer la demande comme timeout
-        // ==============================================
-
-        await updateDoc(
-          requestRef,
-          {
-            status: "timeout",
-            timeoutAt:
-              serverTimestamp(),
-          }
-        );
-
-        console.log(
-          "🔄 Recherche du conducteur suivant..."
-        );
-
-        // ==============================================
-        // Chercher le conducteur suivant
-        // ==============================================
-
-        const nextRequestId =
-          await sendRideToNextDriver({
-            rideId:
-              latestRequest.rideId,
-
-            passenger: {
-              userId:
-                latestRequest.passengerId,
-
-              name:
-                latestRequest.passengerName,
-
-              phone:
-                latestRequest.passengerPhone,
-
-              location:
-                latestRequest.passengerLocation,
-
-              pickup:
-                latestRequest.pickup,
-
-              destination:
-                latestRequest.destination,
-
-              estimatedDistance:
-                latestRequest.estimatedDistance,
-
-              estimatedDuration:
-                latestRequest.estimatedDuration,
-
-              estimatedPrice:
-                latestRequest.estimatedPrice,
-
-              vehicleType:
-                latestRequest.vehicleType,
-            },
-
-            attemptedDrivers:
-              latestRequest.attemptedDrivers ||
-              [],
-          });
-
-        // ==============================================
-        // Un conducteur suivant existe
-        // ==============================================
-
-        if (nextRequestId) {
-          console.log(
-            "✅ Nouvelle demande envoyée :",
-            nextRequestId
-          );
-
-          console.log(
-            "⏱️ DÉMARRAGE TIMER DU CONDUCTEUR SUIVANT :",
-            nextRequestId
-          );
-
-          await startRideRequestTimer(
-            nextRequestId
-          );
-
-          return;
-        }
-
-        // ==============================================
-        // Plus aucun conducteur
-        // ==============================================
-
-        console.log(
-          "❌ Plus aucun conducteur disponible."
-        );
-      } catch (error) {
-        console.error(
-          "❌ Erreur timer :",
-          error
-        );
-      } finally {
-        // ==============================================
-        // Supprimer ce timer
-        // ==============================================
-
-        activeTimers.delete(requestId);
-
-        console.log(
-          "🧹 Timer supprimé :",
-          requestId
-        );
-      }
-    },
-    requestTimeout
-  );
-
-  // ====================================================
-  // Enregistrer le timer
-  // ====================================================
-
-  activeTimers.set(
-    requestId,
-    timer
-  );
-
-  console.log(
-    "⏱️ Timer enregistré :",
-    requestId
-  );
-}
-
-// ======================================================
-// Arrêter manuellement un timer
-// ======================================================
-
-export function stopRideRequestTimer(
-  requestId
-) {
-  const timer =
-    activeTimers.get(requestId);
-
-  if (timer) {
-    clearTimeout(timer);
-
-    activeTimers.delete(
-      requestId
+  if (
+    ride.status !== "searching"
+  ) {
+
+    console.log(
+      "⛔ Impossible de démarrer le timer."
     );
 
     console.log(
-      "🛑 Timer arrêté :",
-      requestId
+      "Statut actuel :",
+      ride.status
+    );
+
+    return;
+  }
+
+
+  console.log(
+    "🚕 Course :",
+    rideId
+  );
+
+  console.log(
+    "👥 Mode de recherche :",
+    ride.searchMode ?? "broadcast"
+  );
+
+  console.log(
+    "👥 Conducteurs contactés :",
+    ride.contactedDriversCount ??
+      ride.contactedDrivers?.length ??
+      0
+  );
+
+  console.log(
+    "⏱️ Timeout global : 60 secondes"
+  );
+
+
+  // ====================================================
+  // TIMER GLOBAL DE 60 SECONDES
+  // ====================================================
+
+  const timer =
+    setTimeout(
+      async () => {
+
+        try {
+
+          console.log(
+            "======================================"
+          );
+
+          console.log(
+            "⏰ TIMER GLOBAL EXPIRÉ"
+          );
+
+          console.log(
+            "🚕 Ride ID :",
+            rideId
+          );
+
+          console.log(
+            "⏱️ 60 secondes écoulées"
+          );
+
+          console.log(
+            "======================================"
+          );
+
+
+          // ============================================
+          // RECHARGER LA COURSE
+          // ============================================
+
+          const latestRideSnap =
+            await getDoc(rideRef);
+
+
+          if (!latestRideSnap.exists()) {
+
+            console.log(
+              "❌ Course introuvable."
+            );
+
+            return;
+          }
+
+
+          const latestRide =
+            latestRideSnap.data();
+
+
+          // ============================================
+          // COURSE ANNULÉE
+          // ============================================
+
+          if (
+            latestRide.status ===
+            "cancelled"
+          ) {
+
+            console.log(
+              "⛔ Course annulée."
+            );
+
+            return;
+          }
+
+
+          // ============================================
+          // COURSE DÉJÀ ACCEPTÉE
+          // ============================================
+
+          if (
+            [
+              "accepted",
+              "driver_arriving",
+              "arrived",
+              "started",
+              "completed",
+            ].includes(
+              latestRide.status
+            )
+          ) {
+
+            console.log(
+              "✅ Course déjà prise."
+            );
+
+            return;
+          }
+
+
+          // ============================================
+          // COURSE DÉJÀ TERMINÉE
+          // ============================================
+
+          if (
+            [
+              "search_timeout",
+              "search_failed",
+            ].includes(
+              latestRide.status
+            )
+          ) {
+
+            console.log(
+              "ℹ️ Recherche déjà terminée :",
+              latestRide.status
+            );
+
+            return;
+          }
+
+
+          // ============================================
+          // VÉRIFIER QUE LA COURSE EST TOUJOURS
+          // EN RECHERCHE
+          // ============================================
+
+          if (
+            latestRide.status !==
+            "searching"
+          ) {
+
+            console.log(
+              "⛔ Recherche déjà terminée :",
+              latestRide.status
+            );
+
+            return;
+          }
+
+
+          // ============================================
+          // MARQUER TOUTES LES DEMANDES EN ATTENTE
+          // COMME EXPIRÉES
+          // ============================================
+
+          console.log(
+            "⌛ Recherche globale expirée."
+          );
+
+
+          // =================================================
+          // IMPORTANT :
+          //
+          // La course possède plusieurs ride_requests.
+          //
+          // Le rideRequestManager ne doit pas ici essayer
+          // de contacter un conducteur suivant.
+          //
+          // Tous les conducteurs ont déjà reçu la demande.
+          //
+          // =================================================
+
+
+          // ============================================
+          // TERMINER LA COURSE
+          // ============================================
+
+          await updateDoc(
+            rideRef,
+            {
+
+              status:
+                "search_timeout",
+
+              failureReason:
+                "no_driver_answer",
+
+              searchEndedAt:
+                serverTimestamp(),
+
+              // ========================================
+              // Nettoyage du conducteur recherché
+              // ========================================
+
+              currentSearchingRequestId:
+                null,
+
+              currentSearchingDriverId:
+                null,
+
+              currentSearchingDriverName:
+                null,
+
+              currentSearchingDriverLocation:
+                null,
+
+              currentSearchingDriverDistance:
+                null,
+
+              currentSearchingDriverVehicleType:
+                null,
+
+            }
+          );
+
+
+          console.log(
+            "======================================"
+          );
+
+          console.log(
+            "❌ RECHERCHE TERMINÉE"
+          );
+
+          console.log(
+            "❌ Aucun conducteur n'a répondu"
+          );
+
+          console.log(
+            "⏱️ Timeout : 60 secondes"
+          );
+
+          console.log(
+            "🚕 Ride ID :",
+            rideId
+          );
+
+          console.log(
+            "======================================"
+          );
+
+
+        } catch (error) {
+
+          console.error(
+            "❌ Erreur timer global :",
+            error
+          );
+
+        } finally {
+
+          // ==========================================
+          // SUPPRIMER LE TIMER
+          // ==========================================
+
+          activeTimers.delete(
+            rideId
+          );
+
+          console.log(
+            "🧹 Timer global supprimé :",
+            rideId
+          );
+        }
+
+      },
+
+      SEARCH_TIMEOUT
+    );
+
+
+  // ====================================================
+  // ENREGISTRER LE TIMER
+  // ====================================================
+
+  activeTimers.set(
+    rideId,
+    timer
+  );
+
+
+  console.log(
+    "⏱️ Timer global enregistré :",
+    rideId
+  );
+
+  console.log(
+    "⏱️ Expiration prévue dans : 60 secondes"
+  );
+}
+
+
+// ======================================================
+// ARRÊTER LE TIMER D'UNE COURSE
+// ======================================================
+//
+// À appeler lorsqu'un conducteur accepte.
+// ======================================================
+
+export function stopRideSearchTimer(
+  rideId
+) {
+
+  const timer =
+    activeTimers.get(
+      rideId
+    );
+
+
+  if (timer) {
+
+    clearTimeout(
+      timer
+    );
+
+    activeTimers.delete(
+      rideId
+    );
+
+    console.log(
+      "🛑 Timer global arrêté :",
+      rideId
+    );
+
+  } else {
+
+    console.log(
+      "ℹ️ Aucun timer actif pour :",
+      rideId
     );
   }
+}
+
+
+// ======================================================
+// VÉRIFIER SI UN TIMER EST ACTIF
+// ======================================================
+
+export function isRideSearchTimerActive(
+  rideId
+) {
+
+  return activeTimers.has(
+    rideId
+  );
 }

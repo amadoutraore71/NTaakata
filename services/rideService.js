@@ -1,18 +1,26 @@
 import {
-    addDoc,
-    collection,
-    doc,
-    serverTimestamp,
-    updateDoc,
+  addDoc,
+  collection,
+  doc,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../firebase/config";
-import { sendRideRequest } from "./matchingService";
 
-/**
- * Création d'une nouvelle course
- */
+import {
+  sendRideRequestToAllDrivers,
+} from "./matchingService";
+
+import {
+  findAvailableDrivers,
+} from "./matching/driverSelectionService";
+
 console.log("📂 FICHIER services/rideService chargé");
+
+// ======================================================
+// CRÉATION D'UNE NOUVELLE COURSE
+// ======================================================
 
 export async function createRide({
   passenger,
@@ -24,176 +32,422 @@ export async function createRide({
   price,
   vehicleType,
 }) {
- 
   try {
 
     console.log("========== CREATE RIDE ==========");
-    console.log("pickup =", JSON.stringify(pickup, null, 2));
-    console.log("destination =", JSON.stringify(destination, null, 2));
+
+    console.log(
+      "pickup =",
+      JSON.stringify(pickup, null, 2)
+    );
+
+    console.log(
+      "destination =",
+      JSON.stringify(destination, null, 2)
+    );
+
+    console.log(
+      "vehicleType =",
+      vehicleType
+    );
+
     console.log("===============================");
+
+    // ==================================================
+    // 1. CRÉER LA COURSE
+    // ==================================================
+
     const ride = {
+
       // ==========================
       // PASSAGER
       // ==========================
-      passengerId: passenger.userId,
-      passengerName: passenger.name,
-      passengerPhone: passenger.phone,
+
+      passengerId:
+        passenger.userId,
+
+      passengerName:
+        passenger.name,
+
+      passengerPhone:
+        passenger.phone,
+
 
       // ==========================
       // CONDUCTEUR
       // ==========================
+
       driverId: null,
+
       driverName: null,
+
       driverPhone: null,
+
       driverVehicleType: null,
+
       driverDistance: null,
+
 
       // ==========================
       // COURSE
       // ==========================
+
       pickup,
+
       destination,
 
-      estimatedDistance: distance,
-      estimatedDuration: duration,
-      estimatedPrice: price,
+      estimatedDistance:
+        distance,
+
+      estimatedDuration:
+        duration,
+
+      estimatedPrice:
+        price,
 
       vehicleType,
+
 
       // ==========================
       // STATUT
       // ==========================
-      status: "searching",
+
+      status:
+        "searching",
+
 
       // ==========================
       // DATES
       // ==========================
-      createdAt: serverTimestamp(),
 
-      acceptedAt: null,
+      createdAt:
+        serverTimestamp(),
 
-      driverArrivingAt: null,
-      arrivedAt: null,
+      acceptedAt:
+        null,
 
-      startedAt: null,
+      driverArrivingAt:
+        null,
 
-      completedAt: null,
+      arrivedAt:
+        null,
 
-      cancelledAt: null,
+      startedAt:
+        null,
 
-      searchEndedAt: null,
+      completedAt:
+        null,
+
+      cancelledAt:
+        null,
+
+      searchEndedAt:
+        null,
+
 
       // ==========================
       // PAIEMENT
       // ==========================
-      paymentStatus: "pending",
-      paymentMethod: "Espèces",
+
+      paymentStatus:
+        "pending",
+
+      paymentMethod:
+        "Espèces",
+
 
       // ==========================
       // NOTATION
       // ==========================
-      ratingSubmitted: false,
+
+      ratingSubmitted:
+        false,
+
 
       // ==========================
       // AUTRES
       // ==========================
-      rideCode: null,
-      failureReason: null,
+
+      rideCode:
+        null,
+
+      failureReason:
+        null,
+
+
+      // ==========================
+      // MATCHING
+      // ==========================
+
+      attemptedDrivers:
+        [],
+
+      contactedDrivers:
+        [],
+
+      currentSearchingRequestId:
+        null,
+
+      currentSearchingDriverId:
+        null,
+
+      currentSearchingDriverName:
+        null,
+
+      currentSearchingDriverLocation:
+        null,
+
+      currentSearchingDriverDistance:
+        null,
+
+      currentSearchingDriverVehicleType:
+        null,
     };
 
-    const docRef = await addDoc(
-      collection(db, "rides"),
-      ride
+
+    // ==================================================
+    // 2. ENREGISTRER LA COURSE
+    // ==================================================
+
+    const docRef =
+      await addDoc(
+        collection(db, "rides"),
+        ride
+      );
+
+
+    console.log(
+      "🔥 COURSE CRÉÉE :",
+      docRef.id
     );
-console.log("🔥 Avant sendRideRequest");
-    await sendRideRequest({
-      rideId: docRef.id,
 
-      passenger: {
-        ...passenger,
 
-        vehicleType,
+    // ==================================================
+    // 3. CHERCHER TOUS LES CONDUCTEURS DISPONIBLES
+    // ==================================================
 
-        location: pickup,
+    console.log(
+      "🔎 Recherche de TOUS les conducteurs disponibles..."
+    );
 
+
+    const drivers =
+      await findAvailableDrivers(
         pickup,
-        destination,
+        vehicleType
+      );
 
-        estimatedDistance: distance,
-        estimatedDuration: duration,
-        estimatedPrice: price,
-      },
 
-      driver,
-    });
-console.log("🔥 Après sendRideRequest");
-    console.log("======================================");
-    console.log("✅ COURSE CRÉÉE");
-    console.log("Ride ID :", docRef.id);
-    console.log("Passager :", passenger.name);
-    console.log("Véhicule :", vehicleType);
-    console.log("Prix :", price, "FCFA");
-    console.log("======================================");
+    console.log(
+      "🚗 Conducteurs disponibles :",
+      drivers.length
+    );
+
+
+    // ==================================================
+    // 4. AUCUN CONDUCTEUR
+    // ==================================================
+
+    if (!drivers.length) {
+
+      console.log(
+        "❌ Aucun conducteur disponible."
+      );
+
+
+      await markRideAsSearchFailed(
+        docRef.id,
+        "no_driver_found"
+      );
+
+
+      return docRef.id;
+    }
+
+
+    // ==================================================
+    // 5. AFFICHER LES CONDUCTEURS
+    // ==================================================
+
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      "📢 CONDUCTEURS QUI VONT RECEVOIR LA DEMANDE"
+    );
+
+    drivers.forEach(
+      (driver, index) => {
+
+        console.log(
+          `${index + 1}. ${driver.name} - ${driver.distance} m`
+        );
+
+      }
+    );
+
+    console.log(
+      "======================================"
+    );
+
+
+    // ==================================================
+    // 6. ENVOYER À TOUS LES CONDUCTEURS
+    // ==================================================
+
+    const requestIds =
+      await sendRideRequestToAllDrivers({
+
+        rideId:
+          docRef.id,
+
+        passenger: {
+
+          ...passenger,
+
+          vehicleType,
+
+          location:
+            pickup,
+
+          pickup,
+
+          destination,
+
+          estimatedDistance:
+            distance,
+
+          estimatedDuration:
+            duration,
+
+          estimatedPrice:
+            price,
+        },
+
+        drivers,
+      });
+
+
+    console.log(
+      "📢 DEMANDES ENVOYÉES :",
+      requestIds.length
+    );
+
+// ==================================================
+// 7. LOG FINAL
+// ==================================================
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      "✅ COURSE CRÉÉE"
+    );
+
+    console.log(
+      "Ride ID :",
+      docRef.id
+    );
+
+    console.log(
+      "Passager :",
+      passenger.name
+    );
+
+    console.log(
+      "Véhicule :",
+      vehicleType
+    );
+
+    console.log(
+      "Conducteurs contactés :",
+      drivers.length
+    );
+
+    console.log(
+      "Demandes créées :",
+      requestIds.length
+    );
+
+   console.log(
+  "⏱️ Timeout : 60 secondes"
+);
+
+    console.log(
+      "======================================"
+    );
+
 
     return docRef.id;
 
+
   } catch (error) {
-    console.error("❌ createRide :", error);
+
+    console.error(
+      "❌ createRide :",
+      error
+    );
+
     throw error;
   }
 }
 
-/**
- * Recherche terminée :
- * - aucun conducteur trouvé
- * - ou aucun conducteur n'a répondu
- */
+
+// ======================================================
+// RECHERCHE TERMINÉE
+// ======================================================
+
 export async function markRideAsSearchFailed(
   rideId,
   reason = "no_driver_found"
 ) {
+
   try {
-    const rideRef = doc(db, "rides", rideId);
 
-    await updateDoc(rideRef, {
-      // ==========================================
-      // STATUT FINAL DE LA RECHERCHE
-      // ==========================================
+    const rideRef =
+      doc(
+        db,
+        "rides",
+        rideId
+      );
 
-      status:
-        reason === "no_driver_answer"
-          ? "search_timeout"
-          : "search_failed",
 
-      // ==========================================
-      // RAISON DE L'ÉCHEC
-      // ==========================================
+    await updateDoc(
+      rideRef,
+      {
 
-      failureReason: reason,
+        status:
+          reason === "no_driver_answer"
+            ? "search_timeout"
+            : "search_failed",
 
-      // ==========================================
-      // DATE DE FIN DE RECHERCHE
-      // ==========================================
+        failureReason:
+          reason,
 
-      searchEndedAt: serverTimestamp(),
+        searchEndedAt:
+          serverTimestamp(),
 
-      // ==========================================
-      // NETTOYER LE CONDUCTEUR ACTUELLEMENT
-      // RECHERCHÉ
-      // ==========================================
+        currentSearchingRequestId:
+          null,
 
-      currentSearchingRequestId: null,
+        currentSearchingDriverId:
+          null,
 
-      currentSearchingDriverId: null,
+        currentSearchingDriverName:
+          null,
 
-      currentSearchingDriverName: null,
+        currentSearchingDriverLocation:
+          null,
 
-      currentSearchingDriverLocation: null,
+        currentSearchingDriverDistance:
+          null,
 
-      currentSearchingDriverDistance: null,
+        currentSearchingDriverVehicleType:
+          null,
+      }
+    );
 
-      currentSearchingDriverVehicleType: null,
-    });
 
     console.log(
       "======================================"
@@ -214,18 +468,12 @@ export async function markRideAsSearchFailed(
     );
 
     console.log(
-      "🧹 Conducteur actuellement recherché supprimé"
-    );
-
-    console.log(
-      "🧹 currentSearchingRequestId supprimé"
-    );
-
-    console.log(
       "======================================"
     );
 
+
   } catch (error) {
+
     console.error(
       "❌ markRideAsSearchFailed :",
       error

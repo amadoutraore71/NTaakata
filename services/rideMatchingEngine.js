@@ -13,109 +13,92 @@ import { findAvailableDrivers } from "./matching/driverSelectionService";
 import { markRideAsSearchFailed } from "./rideService";
 
 // ======================================================
-// Empêche deux appels simultanés pour la même course
+// Empêche deux matching simultanés pour la même course
 // ======================================================
 
 const processingRides = new Set();
 
 // ======================================================
-// Envoie la course au prochain conducteur réellement
-// disponible et qui n'a PAS encore été contacté.
+// Contacte TOUS les conducteurs disponibles simultanément
 // ======================================================
 
-export async function sendRideToNextDriver({
+export async function sendRideToAllDrivers({
   rideId,
   passenger,
-  attemptedDrivers = [],
 }) {
   console.log(
-    "🚨 sendRideToNextDriver appelée",
-    rideId,
-    attemptedDrivers
+    "🚨 sendRideToAllDrivers appelée",
+    rideId
   );
 
   // ====================================================
-  // PROTECTION CONTRE DEUX APPELS SIMULTANÉS
+  // Protection contre les appels simultanés
   // ====================================================
 
   if (processingRides.has(rideId)) {
     console.log(
-      "⛔ Matching déjà en cours pour cette course :",
+      "⛔ Matching déjà en cours :",
       rideId
     );
 
-    return null;
+    return [];
   }
 
   processingRides.add(rideId);
 
   try {
     // ==================================================
-    // 1. RÉCUPÉRER LA COURSE
+    // 1. Récupérer la course
     // ==================================================
 
-    const rideRef = doc(db, "rides", rideId);
+    const rideRef = doc(
+      db,
+      "rides",
+      rideId
+    );
 
-    const rideSnap = await getDoc(rideRef);
+    const rideSnap =
+      await getDoc(rideRef);
 
     if (!rideSnap.exists()) {
-      console.log("❌ Course introuvable.");
-      return null;
+      console.log(
+        "❌ Course introuvable :",
+        rideId
+      );
+
+      return [];
     }
 
-    const ride = rideSnap.data();
+    const ride =
+      rideSnap.data();
 
     // ==================================================
-    // 2. VÉRIFIER QUE LA RECHERCHE EST TOUJOURS ACTIVE
+    // 2. Vérifier que la recherche est active
     // ==================================================
 
-    if (ride.status !== "searching") {
+    if (
+      ride.status !== "searching"
+    ) {
       console.log(
-        "⛔ Recherche arrêtée :",
+        "⛔ Recherche non active :",
         ride.status
       );
 
-      return null;
+      return [];
     }
 
     // ==================================================
-    // 3. CONDUCTEURS RÉELLEMENT CONTACTÉS
-    //
-    // IMPORTANT :
-    // On utilise contactedDrivers comme source de vérité.
+    // 3. Chercher les conducteurs disponibles
     // ==================================================
 
-    const contactedDrivers =
-      Array.isArray(ride.contactedDrivers)
-        ? ride.contactedDrivers
-        : [];
-
-    const contactedDriverIds =
-      contactedDrivers
-        .map((driver) => driver?.id)
-        .filter(Boolean);
+    const drivers =
+      await findAvailableDrivers(
+        passenger.location,
+        passenger.vehicleType
+      );
 
     console.log(
-      "📞 Conducteurs réellement contactés :",
-      contactedDriverIds
-    );
-
-    console.log(
-      "📋 attemptedDrivers reçu :",
-      attemptedDrivers
-    );
-
-    // ==================================================
-    // 4. CHERCHER TOUS LES CONDUCTEURS DISPONIBLES
-    // ==================================================
-
-    const drivers = await findAvailableDrivers(
-      passenger.location,
-      passenger.vehicleType
-    );
-
-    console.log(
-      "🚗 Conducteurs trouvés :",
+      "🚗 Conducteurs disponibles :",
       drivers.length
     );
 
@@ -126,40 +109,42 @@ export async function sendRideToNextDriver({
 
       await markRideAsSearchFailed(
         rideId,
-        "no_driver_answer"
+        "no_driver_available"
       );
 
-      return null;
+      return [];
     }
 
     // ==================================================
-    // 5. TROUVER LE PROCHAIN CONDUCTEUR
-    //
-    // On ignore les conducteurs déjà réellement contactés.
-    //
-    // Exemple :
-    //
-    // Van Moto       → déjà contacté
-    // Oumar wolo     → PAS contacté
-    // Homo Moto      → PAS contacté
-    // Vieux Moto     → PAS contacté
-    //
-    // Le résultat sera donc Oumar wolo.
+    // 4. Éviter les conducteurs déjà contactés
     // ==================================================
 
-    const nextDriver = drivers.find(
-      (driver) =>
-        !contactedDriverIds.includes(driver.id)
-    );
+    const alreadyContacted =
+      Array.isArray(ride.contactedDrivers)
+        ? ride.contactedDrivers
+        : [];
 
-    if (!nextDriver) {
-      console.log(
-        "❌ Aucun conducteur suivant disponible."
+    const alreadyContactedIds =
+      alreadyContacted
+        .map((driver) => driver?.id)
+        .filter(Boolean);
+
+    const availableDrivers =
+      drivers.filter(
+        (driver) =>
+          !alreadyContactedIds.includes(
+            driver.id
+          )
       );
 
+    console.log(
+      "🎯 Nouveaux conducteurs à contacter :",
+      availableDrivers.length
+    );
+
+    if (!availableDrivers.length) {
       console.log(
-        "📞 Conducteurs déjà contactés :",
-        contactedDriverIds
+        "❌ Tous les conducteurs ont déjà été contactés."
       );
 
       await markRideAsSearchFailed(
@@ -167,185 +152,184 @@ export async function sendRideToNextDriver({
         "no_driver_answer"
       );
 
-      return null;
+      return [];
     }
 
-    console.log(
-      "🎯 PROCHAIN CONDUCTEUR SÉLECTIONNÉ :",
-      nextDriver.name
-    );
-
-    console.log(
-      "🆔 ID :",
-      nextDriver.id
-    );
-
-    console.log(
-      "📏 Distance :",
-      nextDriver.distance,
-      "m"
-    );
-
     // ==================================================
-    // 6. CONSTRUIRE LE NOUVEL HISTORIQUE
-    //
-    // On ajoute UNIQUEMENT le conducteur qui vient
-    // réellement d'être contacté.
+    // 5. Créer les demandes SIMULTANÉMENT
     // ==================================================
 
-    const updatedContactedDrivers = [
-      ...contactedDrivers,
-      {
-        id: nextDriver.id,
-        name: nextDriver.name,
+    const requestResults =
+      await Promise.all(
+        availableDrivers.map(
+          async (driver) => {
 
-        latitude:
-          nextDriver.latitude ?? null,
+            console.log(
+              "📤 Envoi demande à :",
+              driver.name,
+              driver.id
+            );
 
-        longitude:
-          nextDriver.longitude ?? null,
+            const requestRef =
+              await addDoc(
+                collection(
+                  db,
+                  "ride_requests"
+                ),
+                {
+                  rideId,
 
-        vehicleType:
-          nextDriver.vehicleType ?? null,
+                  driverId:
+                    driver.id,
 
-        distance:
-          nextDriver.distance ?? null,
-      },
+                  driverName:
+                    driver.name,
+
+                  driverVehicleType:
+                    driver.vehicleType,
+
+                  driverDistance:
+                    driver.distance,
+
+                  passengerId:
+                    passenger.userId,
+
+                  passengerName:
+                    passenger.name,
+
+                  passengerPhone:
+                    passenger.phone,
+
+                  passengerLocation:
+                    passenger.location,
+
+                  pickup:
+                    passenger.pickup,
+
+                  destination:
+                    passenger.destination,
+
+                  estimatedDistance:
+                    passenger.estimatedDistance,
+
+                  estimatedDuration:
+                    passenger.estimatedDuration,
+
+                  estimatedPrice:
+                    passenger.estimatedPrice,
+
+                  vehicleType:
+                    passenger.vehicleType,
+
+                  status:
+                    "pending",
+
+                  // Ce conducteur a reçu la demande
+                  attemptedDrivers: [
+                    driver.id,
+                  ],
+
+                  createdAt:
+                    serverTimestamp(),
+                }
+              );
+
+            return {
+              requestId:
+                requestRef.id,
+
+              driver,
+            };
+          }
+        )
+      );
+
+    // ==================================================
+    // 6. Construire l'historique
+    // ==================================================
+
+    const newContactedDrivers =
+      requestResults.map(
+        ({ driver }) => ({
+          id:
+            driver.id,
+
+          name:
+            driver.name,
+
+          latitude:
+            driver.latitude ?? null,
+
+          longitude:
+            driver.longitude ?? null,
+
+          vehicleType:
+            driver.vehicleType ?? null,
+
+          distance:
+            driver.distance ?? null,
+        })
+      );
+
+    const allContactedDrivers = [
+      ...alreadyContacted,
+      ...newContactedDrivers,
+    ];
+
+    const allAttemptedDrivers = [
+      ...new Set(
+        allContactedDrivers
+          .map(
+            (driver) =>
+              driver?.id
+          )
+          .filter(Boolean)
+      ),
     ];
 
     // ==================================================
-    // 7. attemptedDrivers
-    //
-    // On le conserve pour compatibilité avec le reste
-    // du projet, mais on ne l'utilise PLUS pour choisir
-    // le prochain conducteur.
-    // ==================================================
-
-    const newAttemptedDrivers = [
-      ...new Set([
-        ...attemptedDrivers,
-        ...contactedDriverIds,
-        nextDriver.id,
-      ]),
-    ];
-
-    console.log(
-      "📋 Nouvel attemptedDrivers :",
-      newAttemptedDrivers
-    );
-
-    console.log(
-      "📞 Nouvel contactedDrivers :",
-      updatedContactedDrivers
-    );
-
-    // ==================================================
-    // 8. CRÉER UNE NOUVELLE DEMANDE
-    // ==================================================
-
-    const requestRef = await addDoc(
-      collection(db, "ride_requests"),
-      {
-        rideId,
-
-        driverId:
-          nextDriver.id,
-
-        driverName:
-          nextDriver.name,
-
-        driverVehicleType:
-          nextDriver.vehicleType,
-
-        driverDistance:
-          nextDriver.distance,
-
-        passengerId:
-          passenger.userId,
-
-        passengerName:
-          passenger.name,
-
-        passengerPhone:
-          passenger.phone,
-
-        passengerLocation:
-          passenger.location,
-
-        pickup:
-          passenger.pickup,
-
-        destination:
-          passenger.destination,
-
-        estimatedDistance:
-          passenger.estimatedDistance,
-
-        estimatedDuration:
-          passenger.estimatedDuration,
-
-        estimatedPrice:
-          passenger.estimatedPrice,
-
-        vehicleType:
-          passenger.vehicleType,
-
-        status:
-          "pending",
-
-        // Historique complet
-        attemptedDrivers:
-          newAttemptedDrivers,
-
-        createdAt:
-          serverTimestamp(),
-      }
-    );
-
-    // ==================================================
-    // 9. METTRE À JOUR LA COURSE
+    // 7. Mettre à jour la course
     // ==================================================
 
     await updateDoc(
       rideRef,
       {
-        // Historique technique
         attemptedDrivers:
-          newAttemptedDrivers,
+          allAttemptedDrivers,
 
-        // Conducteurs réellement contactés
         contactedDrivers:
-          updatedContactedDrivers,
+          allContactedDrivers,
 
-        // Demande actuellement active
+        // Plusieurs demandes sont actives.
+        // On n'utilise donc plus
+        // currentSearchingRequestId
+        // pour identifier une seule demande.
+
         currentSearchingRequestId:
-          requestRef.id,
+          null,
 
-        // Conducteur actuellement recherché
         currentSearchingDriverId:
-          nextDriver.id,
+          null,
 
         currentSearchingDriverName:
-          nextDriver.name,
+          null,
 
-        currentSearchingDriverLocation: {
-          latitude:
-            nextDriver.latitude ?? null,
-
-          longitude:
-            nextDriver.longitude ?? null,
-        },
+        currentSearchingDriverLocation:
+          null,
 
         currentSearchingDriverDistance:
-          nextDriver.distance ?? null,
+          null,
 
         currentSearchingDriverVehicleType:
-          nextDriver.vehicleType ?? null,
+          null,
+
+        searchStartedAt:
+          serverTimestamp(),
       }
     );
 
     // ==================================================
-    // 10. LOGS
+    // 8. Logs
     // ==================================================
 
     console.log(
@@ -353,63 +337,64 @@ export async function sendRideToNextDriver({
     );
 
     console.log(
-      "✅ NOUVEAU CONDUCTEUR SÉLECTIONNÉ"
+      "✅ DEMANDES ENVOYÉES SIMULTANÉMENT"
     );
 
     console.log(
-      "👤 Conducteur :",
-      nextDriver.name
+      "🚗 Nombre de conducteurs :",
+      requestResults.length
+    );
+
+    requestResults.forEach(
+      ({ requestId, driver }, index) => {
+
+        console.log(
+          `${index + 1}. ${driver.name} - ${driver.distance} m`
+        );
+
+        console.log(
+          "   Driver ID :",
+          driver.id
+        );
+
+        console.log(
+          "   Request ID :",
+          requestId
+        );
+      }
     );
 
     console.log(
-      "🆔 Driver ID :",
-      nextDriver.id
+      "📞 Conducteurs contactés :",
+      allAttemptedDrivers
     );
 
     console.log(
-      "🆔 Request ID :",
-      requestRef.id
-    );
-
-    console.log(
-      "📋 attemptedDrivers :",
-      newAttemptedDrivers
-    );
-
-    console.log(
-      "📞 contactedDrivers :",
-      updatedContactedDrivers
-    );
-
-    console.log(
-      "📌 currentSearchingRequestId :",
-      requestRef.id
+      "⏱️ Timeout global : 30 secondes"
     );
 
     console.log(
       "======================================"
     );
 
-    // ==================================================
-    // 11. RETOURNER L'ID DE LA DEMANDE
-    // ==================================================
-
-    return requestRef.id;
+    return requestResults.map(
+      (item) => item.requestId
+    );
 
   } catch (error) {
+
     console.error(
-      "❌ sendRideToNextDriver :",
+      "❌ sendRideToAllDrivers :",
       error
     );
 
     throw error;
 
   } finally {
-    // ==================================================
-    // LIBÉRER LE VERROU
-    // ==================================================
 
-    processingRides.delete(rideId);
+    processingRides.delete(
+      rideId
+    );
 
     console.log(
       "🔓 Matching libéré :",
