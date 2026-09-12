@@ -245,20 +245,132 @@ export default function RideStatus() {
 
   };
 
-  /*
-  ------------------------------------
-  Démarrer
-  ------------------------------------
-  */
+// ===================================================
+// DÉMARRER LA COURSE
+// ===================================================
 
-  const handleStartRide = async () => {
+const handleStartRide =
+  async () => {
 
-    await startRide(
-
-      ride.id
-
+    console.log(
+      "========================================"
     );
 
+    console.log(
+      "🚗 BOUTON DÉMARRER LA COURSE"
+    );
+
+    console.log(
+      "========================================"
+    );
+
+    // ===============================================
+    // COURSE
+    // ===============================================
+
+    if (!ride?.id) {
+
+      console.log(
+        "❌ Course introuvable."
+      );
+
+      return;
+    }
+
+    // ===============================================
+    // VÉRIFIER LE STATUT
+    // ===============================================
+
+    if (ride.status !== "arrived") {
+
+      console.log(
+        "❌ Impossible de démarrer."
+      );
+
+      console.log(
+        "📌 Statut actuel :",
+        ride.status
+      );
+
+      return;
+    }
+
+    // ===============================================
+    // VÉRIFIER LE CONDUCTEUR
+    // ===============================================
+
+    if (!ride.driverId) {
+
+      console.log(
+        "❌ Aucun conducteur accepté."
+      );
+
+      return;
+    }
+
+    // ===============================================
+    // EMPÊCHER DOUBLE LANCEMENT
+    // ===============================================
+
+    if (movementRunningRef.current) {
+
+      console.log(
+        "⏳ Un déplacement est déjà en cours."
+      );
+
+      return;
+    }
+
+    try {
+
+      // =============================================
+      // 1. MARQUER LA COURSE COMME DÉMARRÉE
+      // =============================================
+
+      await updateDoc(
+        doc(
+          db,
+          "rides",
+          ride.id
+        ),
+        {
+          status:
+            "started",
+
+          startedAt:
+            serverTimestamp(),
+        }
+      );
+
+      console.log(
+        "🚗 Course démarrée"
+      );
+
+      // =============================================
+      // 2. LANCER LE DÉPLACEMENT
+      //    CONDUCTEUR → DESTINATION
+      // =============================================
+
+      console.log(
+        "🚗 Lancement du déplacement vers destination..."
+      );
+
+      await handleMoveDriverToDestination();
+
+      console.log(
+        "✅ handleMoveDriverToDestination terminé."
+      );
+
+    } catch (error) {
+
+      console.log(
+        "❌ Erreur démarrage course :",
+        error
+      );
+
+      movementRunningRef.current =
+        false;
+    }
   };
 
   /*

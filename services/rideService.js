@@ -1,21 +1,23 @@
 import {
-  addDoc,
-  collection,
-  doc,
-  serverTimestamp,
-  updateDoc,
+    addDoc,
+    collection,
+    doc,
+    serverTimestamp,
+    updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../firebase/config";
 
 import {
-  sendRideRequestToAllDrivers,
+    sendRideRequestToAllDrivers,
 } from "./matchingService";
 
 import {
-  findAvailableDrivers,
+    calculateFare,
+} from "./../src/utils/fareCalculator";
+import {
+    findAvailableDrivers,
 } from "./matching/driverSelectionService";
-
 console.log("📂 FICHIER services/rideService chargé");
 
 // ======================================================
@@ -56,7 +58,24 @@ export async function createRide({
     // ==================================================
     // 1. CRÉER LA COURSE
     // ==================================================
+const calculatedPrice =
+  calculateFare(
+    Number(distance) || 0,
+    vehicleType
+  );
 
+console.log(
+  "💰 TARIF CALCULÉ :",
+  {
+    distanceKm:
+      Number(distance) || 0,
+
+    vehicleType,
+
+    price:
+      calculatedPrice,
+  }
+);
     const ride = {
 
       // ==========================
@@ -103,7 +122,7 @@ export async function createRide({
         duration,
 
       estimatedPrice:
-        price,
+  calculatedPrice,
 
       vehicleType,
 
@@ -322,7 +341,7 @@ export async function createRide({
             duration,
 
           estimatedPrice:
-            price,
+  calculatedPrice,
         },
 
         drivers,

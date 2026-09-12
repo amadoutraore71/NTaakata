@@ -121,9 +121,9 @@ export default function PassengerHome() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <PassengerHeader
+        {/* <PassengerHeader
           user={user}
-        />
+        /> */}
 
         <View style={styles.card}>
           <View style={styles.section}>

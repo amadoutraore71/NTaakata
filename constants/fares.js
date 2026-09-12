@@ -1,16 +1,16 @@
 export const FARES = {
   moto: {
-    baseFare: 200,
-    pricePerKm: 40,
+    baseFare: 300,
+    pricePerKm: 100,
   },
 
   voiture: {
-    baseFare: 300,
-    pricePerKm: 60,
+    baseFare: 500,
+    pricePerKm: 150,
   },
 
   premium: {
-    baseFare: 500,
-    pricePerKm: 80,
+    baseFare: 800,
+    pricePerKm: 200,
   },
 };

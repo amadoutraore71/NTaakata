@@ -1,1505 +1,1507 @@
-import {
-    router,
-    useLocalSearchParams,
-} from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+
+import { useEffect, useRef, useState } from "react";
+
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-    useEffect,
-    useState,
-} from "react";
-
-import {
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from "react-native";
-
-import {
-    GestureHandlerRootView,
-} from "react-native-gesture-handler";
-
-import {
-    SafeAreaView,
-} from "react-native-safe-area-context";
-
-import {
-    collection,
-    doc,
-    onSnapshot,
-    query,
-    serverTimestamp,
-    updateDoc,
-    where,
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
 
 import {
-    debugCancelRide,
-    debugFinishRide,
-    debugResetRide,
-    debugSimulateRide,
+  debugCancelRide,
+  debugFinishRide,
+  debugResetRide,
+  debugSimulateRide,
 } from "../../../services/debugService";
 
 import {
-    acceptRideRequest,
-    rejectRideRequest,
+  acceptRideRequest,
+  rejectRideRequest,
 } from "../../../services/matching/rideRequestService";
 
-import {
-    findAvailableDrivers,
-} from "../../../services/matching/driverSelectionService";
+import { findAvailableDrivers } from "../../../services/matching/driverSelectionService";
+
+import { cancelRide } from "../../../services/rideLifecycleService";
 
 import {
-    cancelRide,
-} from "../../../services/rideLifecycleService";
-
-import {
-    startDriverMovement,
+  startDriverMovement,
+  stopDriverMovement,
 } from "../../../src/services/simulation/driverMovementService";
 
 import DeveloperPanel from "../../components/debug/DeveloperPanel";
 import RideStatusBanner from "../../components/ride/RideStatusBanner";
 import RideTrackingMap from "../../components/ride/RideTrackingMap";
 
+// =====================================================
+// RIDE STATUS
+// =====================================================
 
 export default function RideStatus() {
+  const { rideId } = useLocalSearchParams();
 
-  const { rideId } =
-    useLocalSearchParams();
+  // ===================================================
+  // COURSE
+  // ===================================================
 
+  const [ride, setRide] = useState(null);
 
-  const [ride, setRide] =
-    useState(null);
+  // ===================================================
+  // CONDUCTEUR
+  // ===================================================
 
+  const [driver, setDriver] = useState(null);
 
-  const [driver, setDriver] =
-    useState(null);
+  // ===================================================
+  // POSITION PASSAGER
+  // ===================================================
 
+  const [passengerLocation, setPassengerLocation] = useState(null);
 
-  const [
-    passengerLocation,
-    setPassengerLocation,
-  ] = useState(null);
+  // ===================================================
+  // INFORMATIONS ROUTE
+  // ===================================================
 
-
-  const [
-    routeInfo,
-    setRouteInfo,
-  ] = useState({
+  const [routeInfo, setRouteInfo] = useState({
     distance: null,
     duration: null,
     eta: null,
   });
 
+  // ===================================================
+  // CONDUCTEURS DISPONIBLES
+  // ===================================================
 
-  // IMPORTANT :
-  // Cette liste ne doit jamais être vidée
-  // simplement parce que la recherche est terminée.
-  const [
-    nearbyDrivers,
-    setNearbyDrivers,
-  ] = useState([]);
+  const [nearbyDrivers, setNearbyDrivers] = useState([]);
 
+  // ===================================================
+  // DEMANDES BROADCAST
+  // ===================================================
 
-  // =====================================================
-  // DEMANDES DE COURSE BROADCAST
-  // =====================================================
+  const [rideRequests, setRideRequests] = useState([]);
+  // ===================================================
+  // ÉVITER DOUBLE DÉPLACEMENT
+  // ===================================================
 
-  const [
-    rideRequests,
-    setRideRequests,
-  ] = useState([]);
+  const movementRunningRef = useRef(false);
 
+  // ===================================================
+  // DÉMARRAGE MANUEL DE LA COURSE
+  // ===================================================
 
-  // =====================================================
-  // STATUTS QUI UTILISENT LA CARTE DE SUIVI
-  // =====================================================
+  const [destinationRouteStarted, setDestinationRouteStarted] = useState(false);
+  const [driverRouteStarted, setDriverRouteStarted] = useState(false);
+  // ===================================================
+  // VERROU TRAJET CONDUCTEUR → PASSAGER
+  // ===================================================
+
+  const arrivalMovementStartedRef = useRef(false);
+  // ===================================================
+  // STATUTS TRACKING
+  // ===================================================
 
   const trackingStatuses = [
+    "driver_assigned",
+
     "driver_arriving",
+
     "arrived",
+
     "started",
+
     "completed",
   ];
 
-
-  // =====================================================
+  // ===================================================
   // ÉCOUTER LA COURSE
-  // =====================================================
+  // ===================================================
 
   useEffect(() => {
-
     if (!rideId) {
       return;
     }
 
-
     const unsubscribe = onSnapshot(
       doc(db, "rides", rideId),
+
       (snapshot) => {
-
         if (!snapshot.exists()) {
+          console.log("❌ Course introuvable :", rideId);
 
-          console.log(
-            "❌ Course introuvable :",
-            rideId
-          );
+          setRide(null);
 
           return;
         }
 
-
         const rideData = {
           id: snapshot.id,
+
           ...snapshot.data(),
         };
 
-
-        console.log(
-          "🚕 Ride :",
-          rideData
-        );
-
+        console.log("🚕 Ride :", rideData);
 
         setRide(rideData);
 
+        // =========================================
+        // POSITION PASSAGER
+        // =========================================
 
-        if (rideData.pickup) {
-
+        if (
+          rideData.pickup &&
+          typeof rideData.pickup.latitude === "number" &&
+          typeof rideData.pickup.longitude === "number"
+        ) {
           setPassengerLocation({
-            latitude:
-              rideData.pickup.latitude,
+            latitude: rideData.pickup.latitude,
 
-            longitude:
-              rideData.pickup.longitude,
+            longitude: rideData.pickup.longitude,
           });
-
         }
+      },
 
-      }
+      (error) => {
+        console.log("❌ Erreur écoute course :", error);
+      },
     );
 
-
     return unsubscribe;
-
   }, [rideId]);
-
-
-  // =====================================================
-  // ÉCOUTER LES DEMANDES BROADCAST
-  // =====================================================
+  // ===================================================
+  // RÉINITIALISER LE VERROU POUR UNE NOUVELLE COURSE
+  // ===================================================
 
   useEffect(() => {
+    arrivalMovementStartedRef.current = false;
+    setDriverRouteStarted(false);
+    setDestinationRouteStarted(false);
+  }, [ride?.id, ride?.driverId]);
+  // ===================================================
+  // ÉCOUTER LES DEMANDES BROADCAST
+  // ===================================================
 
+  useEffect(() => {
     if (!rideId) {
-
       setRideRequests([]);
 
       return;
     }
 
-
     const requestsQuery = query(
-      collection(
-        db,
-        "ride_requests"
-      ),
+      collection(db, "ride_requests"),
 
-      where(
-        "rideId",
-        "==",
-        rideId
-      )
+      where("rideId", "==", rideId),
     );
-
 
     const unsubscribe = onSnapshot(
       requestsQuery,
 
       (snapshot) => {
+        const requests = snapshot.docs
 
-        const requests =
-          snapshot.docs
-            .map((item) => ({
-              id: item.id,
-              ...item.data(),
-            }))
+          .map((item) => ({
+            id: item.id,
 
-            .sort(
-              (a, b) =>
-                Number(
-                  a.driverDistance ??
-                  Infinity
-                ) -
-                Number(
-                  b.driverDistance ??
-                  Infinity
-                )
-            );
+            ...item.data(),
+          }))
 
+          .sort(
+            (a, b) =>
+              Number(a.driverDistance ?? Infinity) -
+              Number(b.driverDistance ?? Infinity),
+          );
 
-        console.log(
-          "🧪 RideStatus - demandes broadcast :",
-          requests
-        );
+        console.log("🧪 RideStatus - demandes broadcast :", requests);
 
-
-        setRideRequests(
-          requests
-        );
-
+        setRideRequests(requests);
       },
 
       (error) => {
-
-        console.log(
-          "❌ Erreur écoute ride_requests :",
-          error
-        );
-
-      }
+        console.log("❌ Erreur écoute ride_requests :", error);
+      },
     );
 
-
     return unsubscribe;
-
   }, [rideId]);
 
-
-  // =====================================================
+  // ===================================================
   // ÉCOUTER LE CONDUCTEUR ACCEPTÉ
-  // =====================================================
+  // ===================================================
 
   useEffect(() => {
-
     if (!ride?.driverId) {
-
       setDriver(null);
 
       return;
     }
 
-
-    console.log(
-      "🔎 Recherche conducteur accepté :",
-      ride.driverId
-    );
-
+    console.log("🔎 Écoute conducteur accepté :", ride.driverId);
 
     const unsubscribe = onSnapshot(
-
-      doc(
-        db,
-        "users",
-        ride.driverId
-      ),
+      doc(db, "users", ride.driverId),
 
       (snapshot) => {
-
         if (!snapshot.exists()) {
-
-          console.log(
-            "❌ Conducteur introuvable :",
-            ride.driverId
-          );
+          console.log("⚠️ Conducteur non trouvé dans users :", ride.driverId);
 
           setDriver(null);
 
           return;
         }
 
-
-        const data =
-          snapshot.data();
-
+        const data = snapshot.data();
 
         const driverData = {
-          docId: snapshot.id,
           ...data,
+
+          docId: snapshot.id,
+
+          userId: data.userId ?? snapshot.id,
+
+          name: data.name ?? ride.driverName ?? "Conducteur",
+
+          phone: data.phone ?? ride.driverPhone ?? null,
+
+          vehicleType: data.vehicleType ?? ride.driverVehicleType ?? null,
+
+          latitude:
+            typeof data.latitude === "number"
+              ? data.latitude
+              : (ride.driverLatitude ?? null),
+
+          longitude:
+            typeof data.longitude === "number"
+              ? data.longitude
+              : (ride.driverLongitude ?? null),
+
+          distance: data.distance ?? ride.driverDistance ?? null,
         };
 
+        console.log("✅ Conducteur accepté :", driverData.name);
 
-        console.log(
-          "✅ Conducteur accepté :",
-          driverData.name
-        );
+        console.log("📍 Position conducteur :", {
+          latitude: driverData.latitude,
 
+          longitude: driverData.longitude,
+        });
 
-        setDriver(
-          driverData
-        );
+        setDriver(driverData);
+      },
 
-      }
+      (error) => {
+        console.log("❌ Erreur écoute conducteur :", error);
+      },
     );
 
-
     return unsubscribe;
-
   }, [ride?.driverId]);
 
-
-  // =====================================================
+  // ===================================================
   // CHARGER LES CONDUCTEURS DISPONIBLES
-  // =====================================================
+  // ===================================================
 
   useEffect(() => {
-
     async function loadDrivers() {
-
-      if (
-        !passengerLocation ||
-        !ride ||
-        ride.status !== "searching"
-      ) {
+      if (!passengerLocation || !ride || ride.status !== "searching") {
         return;
       }
 
-
       try {
+        const drivers = await findAvailableDrivers(
+          passengerLocation,
 
-        const drivers =
-          await findAvailableDrivers(
-            passengerLocation,
-            ride.vehicleType
-          );
-
-
-        console.log(
-          "🚕 Conducteurs disponibles :",
-          drivers.length
+          ride.vehicleType,
         );
 
+        console.log("🚕 Conducteurs disponibles :", drivers.length);
 
-        console.log(
-          "🚕 Liste conducteurs :",
-          drivers
-        );
+        console.log("🚕 Liste conducteurs :", drivers);
 
-
-        // IMPORTANT :
-        // On conserve la liste.
-        // Elle ne sera PAS remise à []
-        // lorsque la recherche se termine.
-
-        setNearbyDrivers(
-          drivers
-        );
-
-
+        setNearbyDrivers(drivers);
       } catch (error) {
-
-        console.log(
-          "❌ Erreur chargement conducteurs :",
-          error
-        );
-
+        console.log("❌ Erreur chargement conducteurs :", error);
       }
-
     }
 
-
     loadDrivers();
+  }, [passengerLocation, ride?.status, ride?.vehicleType]);
 
-  }, [
-    passengerLocation,
-    ride?.status,
-    ride?.vehicleType,
-  ]);
-
-
-  // =====================================================
+  // ===================================================
   // COURSE TERMINÉE
-  // =====================================================
+  // ===================================================
 
   useEffect(() => {
-
-    if (
-      ride?.status !==
-      "completed"
-    ) {
+    if (ride?.status !== "completed") {
       return;
     }
 
-
     router.replace({
-
-      pathname:
-        "/(passenger)/rate-driver",
+      pathname: "/(passenger)/rate-driver",
 
       params: {
+        rideId: ride.id,
 
-        rideId:
-          ride.id,
+        driverPhone: ride.driverPhone ?? "",
 
-        driverPhone:
-          ride.driverPhone ??
-          "",
-
-        driverName:
-          ride.driverName ??
-          "",
-
+        driverName: ride.driverName ?? "",
       },
-
     });
-
   }, [ride?.status]);
 
+  // ===================================================
+  // ANNULER
+  // ===================================================
 
-  // =====================================================
-  // ANNULER LA COURSE
-  // =====================================================
+  const handleCancelRide = async () => {
+    if (!ride?.id) {
+      return;
+    }
 
-  const handleCancelRide =
-    async () => {
+    try {
+      await cancelRide(ride.id);
 
-      if (!ride?.id) {
+      // Arrêter immédiatement le déplacement du conducteur
+      if (ride?.driverId) {
+        stopDriverMovement(ride.driverId);
+      }
+
+      movementRunningRef.current = false;
+
+      router.replace("/(passenger)");
+    } catch (error) {
+      console.log("❌ Erreur annulation :", error);
+    }
+  };
+  // ===================================================
+  // ACCEPTER UNE DEMANDE
+  // ===================================================
+
+  const handleDebugAcceptRequest = async (requestId) => {
+    try {
+      const result = await acceptRideRequest(requestId);
+
+      console.log("🧪 Résultat acceptation :", result);
+    } catch (error) {
+      console.log("❌ Erreur acceptation :", error);
+    }
+  };
+
+  // ===================================================
+  // REFUSER UNE DEMANDE
+  // ===================================================
+
+  const handleDebugRejectRequest = async (requestId) => {
+    try {
+      const result = await rejectRideRequest(requestId);
+
+      console.log("🧪 Résultat refus :", result);
+    } catch (error) {
+      console.log("❌ Erreur refus :", error);
+    }
+  };
+
+  // ===================================================
+  // RECHERCHE
+  // ===================================================
+
+  const isSearching = ride?.status === "searching";
+
+  // ===================================================
+  // CONDUCTEUR ACTUELLEMENT CONTACTÉ
+  // ===================================================
+
+  const searchingDriver =
+    isSearching && !ride?.driverId && ride?.currentSearchingDriverId
+      ? {
+          id: ride.currentSearchingDriverId,
+
+          name: ride.currentSearchingDriverName,
+
+          latitude: ride.currentSearchingDriverLocation?.latitude,
+
+          longitude: ride.currentSearchingDriverLocation?.longitude,
+
+          distance: ride.currentSearchingDriverDistance,
+
+          vehicleType: ride.currentSearchingDriverVehicleType,
+        }
+      : null;
+
+  // ===================================================
+  // CONDUCTEUR ACCEPTÉ
+  // ===================================================
+
+  /*
+   * IMPORTANT :
+   *
+   * Le document users peut mettre quelques
+   * instants à être disponible.
+   *
+   * On utilise donc les données du document
+   * rides comme fallback.
+   */
+
+  const displayedDriver = ride?.driverId
+    ? {
+        docId: driver?.docId ?? ride.driverId,
+
+        userId: driver?.userId ?? ride.driverId,
+
+        name: driver?.name ?? ride.driverName ?? "Conducteur",
+
+        phone: driver?.phone ?? ride.driverPhone ?? null,
+
+        vehicleType: driver?.vehicleType ?? ride.driverVehicleType ?? null,
+
+        latitude:
+          typeof driver?.latitude === "number"
+            ? driver.latitude
+            : (ride.driverLatitude ?? null),
+
+        longitude:
+          typeof driver?.longitude === "number"
+            ? driver.longitude
+            : (ride.driverLongitude ?? null),
+
+        distance: driver?.distance ?? ride.driverDistance ?? null,
+      }
+    : null;
+
+  // ===================================================
+  // MODE DE LA CARTE
+  // ===================================================
+
+  /*
+   * La présence de driverId est prioritaire.
+   *
+   * Même si le statut est encore
+   * driver_assigned, on passe directement
+   * en tracking.
+   */
+
+  const mapMode = ride?.driverId
+    ? "tracking"
+    : trackingStatuses.includes(ride?.status)
+      ? "tracking"
+      : "drivers";
+
+  // ===================================================
+  // CONDUCTEURS POUR LA CARTE
+  // ===================================================
+
+  /*
+   * MODE RECHERCHE :
+   *
+   * plusieurs conducteurs.
+   *
+   * MODE TRACKING :
+   *
+   * aucun nearbyDrivers.
+   *
+   * Le conducteur accepté passe par
+   * driverLocation.
+   */
+
+  const driversForMap = ride?.driverId ? [] : nearbyDrivers;
+
+  // ===================================================
+  // RECHERCHE TERMINÉE
+  // ===================================================
+
+  const searchFinished =
+    ride?.status === "search_timeout" || ride?.status === "search_failed";
+
+  // ===================================================
+  // DÉPLACER LE CONDUCTEUR VERS LA DESTINATION
+  // ===================================================
+
+  const handleMoveDriverToDestination = async () => {
+    console.log("========================================");
+
+    console.log("🚗 START DRIVER MOVEMENT TO DESTINATION");
+
+    console.log("========================================");
+
+    // ===============================================
+    // COURSE
+    // ===============================================
+
+    if (!ride?.id) {
+      console.log("❌ Course introuvable.");
+
+      return;
+    }
+
+    // ===============================================
+    // CONDUCTEUR
+    // ===============================================
+
+    if (!ride?.driverId) {
+      console.log("❌ Aucun conducteur accepté.");
+
+      return;
+    }
+
+    // ===============================================
+    // EMPÊCHER DOUBLE LANCEMENT
+    // ===============================================
+
+    if (movementRunningRef.current) {
+      console.log("⏳ Déplacement déjà en cours.");
+
+      return;
+    }
+
+    // ===============================================
+    // POSITION ACTUELLE DU CONDUCTEUR
+    // ===============================================
+
+    const driverLatitude = Number(displayedDriver?.latitude);
+
+    const driverLongitude = Number(displayedDriver?.longitude);
+
+    if (!Number.isFinite(driverLatitude) || !Number.isFinite(driverLongitude)) {
+      console.log(
+        "❌ Position actuelle du conducteur invalide :",
+        displayedDriver,
+      );
+
+      return;
+    }
+
+    // ===============================================
+    // DESTINATION
+    // ===============================================
+
+    const destinationLatitude = Number(ride.destination?.latitude);
+
+    const destinationLongitude = Number(ride.destination?.longitude);
+
+    if (
+      !Number.isFinite(destinationLatitude) ||
+      !Number.isFinite(destinationLongitude)
+    ) {
+      console.log("❌ Destination invalide :", ride.destination);
+
+      return;
+    }
+
+    // ===============================================
+    // VERROU
+    // ===============================================
+
+    movementRunningRef.current = true;
+
+    console.log("🚗 Conducteur :", displayedDriver?.name);
+
+    console.log("🆔 Driver ID :", ride.driverId);
+
+    console.log("📍 Position actuelle :", {
+      latitude: driverLatitude,
+      longitude: driverLongitude,
+    });
+
+    console.log("🎯 Destination :", {
+      latitude: destinationLatitude,
+      longitude: destinationLongitude,
+    });
+
+    try {
+      // =============================================
+      // DÉPLACEMENT CONDUCTEUR → DESTINATION
+      // =============================================
+movementRunningRef.current = true;
+      await startDriverMovement({
+        driverId: ride.driverId,
+
+        startLocation: {
+          latitude: driverLatitude,
+          longitude: driverLongitude,
+        },
+
+        endLocation: {
+          latitude: destinationLatitude,
+          longitude: destinationLongitude,
+        },
+
+        // =========================================
+        // ARRIVÉE À DESTINATION
+        // =========================================
+
+        onFinished: async () => {
+          try {
+            await updateDoc(doc(db, "rides", ride.id), {
+              status: "completed",
+              completedAt: serverTimestamp(),
+            });
+
+            console.log("========================================");
+
+            console.log("🏁 COURSE TERMINÉE");
+
+            console.log("📍 Conducteur arrivé à destination.");
+
+            console.log("========================================");
+          } finally {
+            movementRunningRef.current = false;
+
+            console.log("🔓 movementRunning = false");
+          }
+        },
+      });
+    } catch (error) {
+      console.log("❌ Erreur déplacement vers destination :", error);
+
+      movementRunningRef.current = false;
+    }
+  };
+  // ===================================================
+  // DÉPLACER LE CONDUCTEUR ACCEPTÉ
+  // ===================================================
+
+  const handleMoveDriver = async () => {
+    try {
+      console.log("========================================");
+      console.log("🚗 START DRIVER MOVEMENT");
+      console.log("🆔 driverId =", ride?.driverId);
+
+      // =====================================================
+      // VÉRIFICATIONS
+      // =====================================================
+
+      if (!ride?.driverId) {
+        console.log("❌ Aucun conducteur affecté.");
         return;
       }
 
-
-      try {
-
-        await cancelRide(
-          ride.id
-        );
-
-
-        router.replace(
-          "/(passenger)"
-        );
-
-
-      } catch (error) {
-
-        console.log(
-          "❌ Erreur annulation :",
-          error
-        );
-
+      if (!ride?.pickup) {
+        console.log("❌ Position passager absente.");
+        return;
       }
 
-    };
+      if (!displayedDriver) {
+        console.log("❌ Position conducteur absente.");
+        return;
+      }
 
+      const driverLatitude = Number(displayedDriver.latitude);
+      const driverLongitude = Number(displayedDriver.longitude);
 
-  // =====================================================
-  // DEBUG : ACCEPTER UNE DEMANDE
-  // =====================================================
+      const passengerLatitude = Number(ride.pickup.latitude);
+      const passengerLongitude = Number(ride.pickup.longitude);
 
-  const handleDebugAcceptRequest =
-    async (requestId) => {
+      if (
+        !Number.isFinite(driverLatitude) ||
+        !Number.isFinite(driverLongitude) ||
+        !Number.isFinite(passengerLatitude) ||
+        !Number.isFinite(passengerLongitude)
+      ) {
+        console.log("❌ Coordonnées invalides.");
+        return;
+      }
 
-      try {
+      const startLocation = {
+        latitude: driverLatitude,
+        longitude: driverLongitude,
+      };
 
-        const result =
-          await acceptRideRequest(
-            requestId
+      const endLocation = {
+        latitude: passengerLatitude,
+        longitude: passengerLongitude,
+      };
+
+      console.log("📍 Départ :", JSON.stringify(startLocation));
+
+      console.log("🎯 Passager :", JSON.stringify(endLocation));
+
+      console.log("🚕 Ride :", JSON.stringify(ride));
+
+      // =====================================================
+      // CALCUL DE LA DISTANCE CONDUCTEUR → PASSAGER
+      // =====================================================
+
+      const toRadians = (value) => (value * Math.PI) / 180;
+
+      const earthRadius = 6371000;
+
+      const latitudeDifference = toRadians(passengerLatitude - driverLatitude);
+
+      const longitudeDifference = toRadians(
+        passengerLongitude - driverLongitude,
+      );
+
+      const a =
+        Math.sin(latitudeDifference / 2) ** 2 +
+        Math.cos(toRadians(driverLatitude)) *
+          Math.cos(toRadians(passengerLatitude)) *
+          Math.sin(longitudeDifference / 2) ** 2;
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      const distanceToPassenger = earthRadius * c;
+
+      console.log(
+        "📏 Distance conducteur → passager :",
+        distanceToPassenger.toFixed(2),
+        "m",
+      );
+
+      // =====================================================
+      // CONDUCTEUR DÉJÀ SUR PLACE
+      // =====================================================
+
+      const ARRIVAL_THRESHOLD = 20;
+
+      if (distanceToPassenger <= ARRIVAL_THRESHOLD) {
+        console.log("✅ Conducteur déjà au point de prise en charge.");
+
+        console.log(
+          `📍 Distance ${distanceToPassenger.toFixed(
+            2,
+          )} m <= ${ARRIVAL_THRESHOLD} m`,
+        );
+
+        // Le conducteur n'a pas besoin de se déplacer.
+        // On passe directement à "arrived".
+        const rideRef = doc(db, "rides", ride.id);
+
+        await updateDoc(rideRef, {
+          status: "arrived",
+          arrivedAt: serverTimestamp(),
+          currentSearchingRequestId: null,
+          currentSearchingDriverId: null,
+          currentSearchingDriverName: null,
+          currentSearchingDriverLocation: null,
+          currentSearchingDriverDistance: null,
+          currentSearchingDriverVehicleType: null,
+        });
+
+        console.log("✅ Arrivée confirmée immédiatement.");
+
+        console.log("📍 Le conducteur était déjà sur place.");
+
+        console.log("========================================");
+
+        return;
+      }
+
+   // =====================================================
+// LE CONDUCTEUR EST ASSEZ LOIN
+// → DÉPLACEMENT MANUEL
+// =====================================================
+
+console.log(
+  "🚗 Conducteur suffisamment éloigné."
+);
+
+console.log(
+  "🛣️ Démarrage manuel conducteur → passager..."
+);
+
+// Verrou anti-double déplacement
+movementRunningRef.current = true;
+
+// Autorise le trajet visuel
+setDriverRouteStarted(true);
+
+try {
+
+  await startDriverMovement({
+    driverId:
+      ride.driverId,
+
+    startLocation,
+
+    endLocation,
+
+    onFinished:
+      async () => {
+
+        console.log(
+          "🏁 Conducteur arrivé au passager."
+        );
+
+        try {
+
+          await updateDoc(
+            doc(
+              db,
+              "rides",
+              ride.id
+            ),
+            {
+              status:
+                "arrived",
+
+              arrivedAt:
+                serverTimestamp(),
+
+              driverLatitude:
+                endLocation.latitude,
+
+              driverLongitude:
+                endLocation.longitude,
+            }
           );
 
+          console.log(
+            "✅ Statut course : arrived"
+          );
 
-        console.log(
-          "🧪 Résultat acceptation :",
-          result
-        );
+        } catch (error) {
 
+          console.error(
+            "❌ Erreur mise à jour arrivée :",
+            error
+          );
 
-      } catch (error) {
+        } finally {
 
-        console.log(
-          "❌ Erreur test acceptation :",
-          error
-        );
-
-      }
-
-    };
-
-
-  // =====================================================
-  // DEBUG : REFUSER UNE DEMANDE
-  // =====================================================
-
-  const handleDebugRejectRequest =
-    async (requestId) => {
-
-      try {
-
-        await rejectRideRequest(
-          requestId
-        );
-
-
-        console.log(
-          "🧪 Demande refusée :",
-          requestId
-        );
-
-
-      } catch (error) {
-
-        console.log(
-          "❌ Erreur test refus :",
-          error
-        );
-
-      }
-
-    };
-
-
-  // =====================================================
-  // RECHERCHE EN COURS
-  // =====================================================
-
-  const isSearching =
-    ride?.status ===
-    "searching";
-
-
-  // =====================================================
-  // CONDUCTEUR ACTUELLEMENT CONTACTÉ
-  // =====================================================
-
-  const searchingDriver =
-    isSearching &&
-    !ride?.driverId &&
-    ride?.currentSearchingDriverId
-      ? {
-
-          id:
-            ride.currentSearchingDriverId,
-
-          name:
-            ride.currentSearchingDriverName,
-
-          latitude:
-            ride
-              .currentSearchingDriverLocation
-              ?.latitude,
-
-          longitude:
-            ride
-              .currentSearchingDriverLocation
-              ?.longitude,
-
-          distance:
-            ride.currentSearchingDriverDistance,
-
-          vehicleType:
-            ride.currentSearchingDriverVehicleType,
-
+          movementRunningRef.current =
+            false;
         }
+      },
+  });
 
-      : null;
+} catch (error) {
 
-
-  // =====================================================
-  // CONDUCTEUR ACCEPTÉ
-  // =====================================================
-
-  const displayedDriver =
-    ride?.driverId
-      ? driver
-      : null;
-
-
-  // =====================================================
-  // FIN DE RECHERCHE
-  // =====================================================
-
-  const searchFinished =
-    ride?.status ===
-      "search_timeout" ||
-
-    ride?.status ===
-      "search_failed";
-
-
-  // =====================================================
-  // DEBUG
-  // =====================================================
-
-  console.log(
-    "🔎 RideStatus :",
-    {
-
-      status:
-        ride?.status,
-
-      nearbyDrivers:
-        nearbyDrivers.length,
-
-      rideRequests:
-        rideRequests.length,
-
-      searchingDriver:
-        searchingDriver?.name,
-
-      acceptedDriver:
-        displayedDriver?.name,
-
-    }
+  console.error(
+    "❌ Erreur déplacement conducteur :",
+    error
   );
 
+  movementRunningRef.current =
+    false;
 
-  // =====================================================
-  // CHARGEMENT
-  // =====================================================
+  setDriverRouteStarted(
+    false
+  );
+}
+    } catch (error) {
+      console.error("❌ Erreur déplacement conducteur :", error);
 
-  if (!ride) {
+      movementRunningRef.current = false;
+    }
+  };
+  // ===================================================
+  // DÉMARRER LA COURSE — ACTION MANUELLE
+  // ===================================================
 
-    return (
+  const handleStartRide = async () => {
+    if (!ride?.id) {
+      console.log("❌ Course introuvable.");
+      return;
+    }
 
-      <SafeAreaView
-        style={
-          styles.container
-        }
-      >
+    if (ride.status !== "arrived") {
+      console.log(
+        "❌ Impossible de démarrer la course. Statut actuel :",
+        ride.status,
+      );
+      return;
+    }
 
-        <View
-          style={
-            styles.loadingContainer
-          }
-        >
+    if (movementRunningRef.current) {
+      console.log("⏳ Un déplacement est déjà en cours.");
+      return;
+    }
 
-          <Text>
-            Chargement de la course...
-          </Text>
+    try {
+      // Autorisation explicite du trajet vers destination
+      setDriverRouteStarted(false);
+      setDestinationRouteStarted(true);
 
-        </View>
+await updateDoc(
+  doc(db, "rides", ride.id),
+  {
+    status: "started",
+    startedAt: serverTimestamp(),
+  }
+);
 
-      </SafeAreaView>
+console.log(
+  "🚗 Course démarrée manuellement"
+);
 
-    );
+console.log(
+  "🗺️ Route conducteur → destination activée"
+);
+    } catch (error) {
+      console.log("❌ Erreur démarrage course :", error);
 
+      setDestinationRouteStarted(false);
+      movementRunningRef.current = false;
+    }
+  };
+  // ===================================================
+// DÉMARRER LE DÉPLACEMENT VERS LA DESTINATION
+// APRÈS QUE LA CARTE SOIT EN MODE ROUTE DESTINATION
+// ===================================================
+
+useEffect(() => {
+  if (!ride?.id) {
+    return;
   }
 
+  if (ride.status !== "started") {
+    return;
+  }
 
-  // =====================================================
+  if (!destinationRouteStarted) {
+    return;
+  }
+
+  if (movementRunningRef.current) {
+    return;
+  }
+
+  console.log(
+    "🚦 Démarrage déplacement conducteur → destination"
+  );
+
+  handleMoveDriverToDestination();
+
+}, [
+  ride?.id,
+  ride?.status,
+  destinationRouteStarted,
+]);
+  // ===================================================
+  // SIMULATION ACCEPTATION ANCIENNE
+  // ===================================================
+
+  const handleOldAcceptRide = async () => {
+    try {
+      const selectedDriver =
+        nearbyDrivers.find(
+          (item) => item.id === ride.currentSearchingDriverId,
+        ) ||
+        nearbyDrivers[0] ||
+        null;
+
+      if (!selectedDriver) {
+        console.log("❌ Aucun conducteur disponible.");
+
+        return;
+      }
+
+      console.log("🚕 Ancienne simulation acceptation :", selectedDriver);
+
+      await debugSimulateRide(
+        ride.id,
+
+        selectedDriver,
+      );
+
+      await updateDoc(
+        doc(db, "rides", ride.id),
+
+        {
+          driverId: selectedDriver.id,
+
+          driverName: selectedDriver.name,
+
+          driverPhone: selectedDriver.phone ?? null,
+
+          driverVehicleType: selectedDriver.vehicleType ?? null,
+
+          driverLatitude: selectedDriver.latitude,
+
+          driverLongitude: selectedDriver.longitude,
+
+          driverDistance: selectedDriver.distance ?? null,
+
+          status: "driver_assigned",
+
+          driverArrivingAt: null,
+        },
+      );
+
+      console.log("✅ Conducteur affecté.");
+    } catch (error) {
+      console.log("❌ Erreur ancienne acceptation :", error);
+    }
+  };
+
+  // ===================================================
+  // TERMINER
+  // ===================================================
+
+  const handleFinishRide = async () => {
+    try {
+      await debugFinishRide(ride.id);
+
+      console.log("🏁 Course terminée");
+    } catch (error) {
+      console.log("❌ Erreur fin course :", error);
+    }
+  };
+
+  // ===================================================
+  // ANNULER DEBUG
+  // ===================================================
+
+  const handleDebugCancelRide = async () => {
+    try {
+      await debugCancelRide(ride.id);
+
+      // Arrêter immédiatement le déplacement du conducteur
+      if (ride?.driverId) {
+        stopDriverMovement(ride.driverId);
+      }
+
+      movementRunningRef.current = false;
+
+      console.log("❌ Course annulée");
+    } catch (error) {
+      console.log("❌ Erreur annulation :", error);
+    }
+  };
+  // ===================================================
+  // RESET
+  // ===================================================
+
+  const handleResetRide = async () => {
+    try {
+      movementRunningRef.current = false;
+
+      await debugResetRide(ride.id);
+
+      setDriver(null);
+
+      setNearbyDrivers([]);
+
+      setRideRequests([]);
+
+      console.log("🔄 Course réinitialisée");
+    } catch (error) {
+      console.log("❌ Erreur reset :", error);
+    }
+  };
+
+  // ===================================================
+  // DEBUG
+  // ===================================================
+
+  console.log("🔎 RideStatus :", {
+    status: ride?.status,
+
+    mapMode: mapMode,
+
+    driverId: ride?.driverId,
+
+    acceptedDriver: displayedDriver?.name,
+
+    acceptedDriverLatitude: displayedDriver?.latitude,
+
+    acceptedDriverLongitude: displayedDriver?.longitude,
+
+    nearbyDrivers: nearbyDrivers.length,
+
+    driversForMap: driversForMap.length,
+
+    rideRequests: rideRequests.length,
+
+    searchingDriver: searchingDriver?.name,
+
+    movementRunning: movementRunningRef.current,
+  });
+
+  // ===================================================
+  // CHARGEMENT
+  // ===================================================
+
+  if (!ride) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text>Chargement de la course...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ===================================================
   // AFFICHAGE
-  // =====================================================
+  // ===================================================
 
   return (
-
-    <GestureHandlerRootView
-      style={
-        styles.container
-      }
-    >
-
-      <SafeAreaView
-        style={
-          styles.container
-        }
-      >
-
-        {/* ================= CARTE ================= */}
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaView style={styles.container}>
+        {/* ============================================
+            CARTE
+        ============================================ */}
 
         {passengerLocation && (
-
           <RideTrackingMap
+  mode={mapMode}
 
-            mode={
-              trackingStatuses.includes(
-                ride.status
-              )
-                ? "tracking"
-                : "drivers"
-            }
+  // ==================================================
+  // LIGNE CONDUCTEUR → PASSAGER
+  // APPARAÎT DÈS L'ACCEPTATION
+  // ==================================================
+  showDriverRoute={
+    ride?.status === "driver_assigned" ||
+    ride?.status === "driver_arriving"
+  }
 
+  // ==================================================
+  // MOUVEMENT CONDUCTEUR → PASSAGER
+  // DÉMARRE SEULEMENT AVEC LE BOUTON DEBUG
+  // ==================================================
+  startDriverRoute={
+    driverRouteStarted &&
+    (
+      ride?.status === "driver_assigned" ||
+      ride?.status === "driver_arriving"
+    )
+  }
 
-            passengerLocation={
-              passengerLocation
-            }
+  // ==================================================
+  // MOUVEMENT VERS DESTINATION
+  // ==================================================
+  startDestinationRoute={
+    destinationRouteStarted &&
+    ride?.status === "started"
+  }
 
+  passengerLocation={
+    passengerLocation
+  }
 
-            driverLocation={
+  driverLocation={
+    displayedDriver
+      ? {
+          id:
+            displayedDriver.docId ||
+            displayedDriver.userId ||
+            displayedDriver.id,
 
-              displayedDriver
+          docId:
+            displayedDriver.docId,
 
-                ? {
+          userId:
+            displayedDriver.userId,
 
-                    docId:
-                      displayedDriver.docId,
+          name:
+            displayedDriver.name,
 
-                    userId:
-                      displayedDriver.userId,
+          phone:
+            displayedDriver.phone,
 
-                    name:
-                      displayedDriver.name,
+          latitude:
+            Number(
+              displayedDriver.latitude
+            ),
 
-                    latitude:
-                      displayedDriver.latitude,
+          longitude:
+            Number(
+              displayedDriver.longitude
+            ),
 
-                    longitude:
-                      displayedDriver.longitude,
+          vehicleType:
+            displayedDriver.vehicleType,
 
-                    vehicleType:
-                      displayedDriver.vehicleType,
+          destination:
+            ride?.destination
+              ? {
+                  latitude:
+                    Number(
+                      ride.destination.latitude
+                    ),
 
-                  }
+                  longitude:
+                    Number(
+                      ride.destination.longitude
+                    ),
 
-                : null
+                  address:
+                    ride.destination.address ||
+                    "",
+                }
+              : null,
+        }
+      : null
+  }
 
-            }
+  drivers={driversForMap}
 
+  searchingDriver={
+    isSearching
+      ? searchingDriver
+      : null
+  }
 
-            /*
-             * IMPORTANT :
-             *
-             * On envoie TOUJOURS
-             * nearbyDrivers.
-             *
-             * Même lorsque :
-             *
-             * search_timeout
-             * search_failed
-             *
-             * Les conducteurs restent
-             * donc visibles sur la carte.
-             */
+  onDriverSelected={() => {}}
 
-            drivers={
-              nearbyDrivers
-            }
+  onRouteInfo={(route) => {
+    setRouteInfo({
+      distance:
+        route?.distance ?? null,
 
+      duration:
+        route?.duration ?? null,
 
-            /*
-             * La ligne de recherche
-             * est uniquement liée
-             * à isSearching.
-             */
-
-            searchingDriver={
-
-              isSearching
-                ? searchingDriver
-                : null
-
-            }
-
-
-            onDriverSelected={
-              () => {}
-            }
-
-
-            onRouteInfo={
-              (route) => {
-
-                setRouteInfo({
-
-                  distance:
-                    route.distance,
-
-                  duration:
-                    route.duration,
-
-                  eta:
-                    route.eta
-                      ? new Date(
-                          route.eta
-                        )
-                      : null,
-
-                });
-
-              }
-
-            }
-
-          />
-
+      eta:
+        route?.eta
+          ? new Date(
+              route.eta
+            )
+          : null,
+    });
+  }}
+/>
         )}
 
+        {/* ============================================
+            BANNIÈRE
+        ============================================ */}
 
-        {/* ================= BANNIÈRE ================= */}
-
-        <View
-          style={
-            styles.bottomBanner
-          }
-        >
-
+        <View style={styles.bottomBanner}>
           <RideStatusBanner
-
-            status={
-              ride.status
-            }
-
-
+            status={ride.status}
             driverName={
-
               ride.driverId
-
-                ? driver?.name
-
+                ? displayedDriver?.name
                 : isSearching
-
                   ? searchingDriver?.name
-
                   : null
-
             }
-
-
-            onCancel={
-              handleCancelRide
-            }
-
+            onCancel={handleCancelRide}
           />
-
         </View>
-                
 
-
-        {/* ============ RECHERCHE TERMINÉE ============ */}
+        {/* ============================================
+            RECHERCHE TERMINÉE
+        ============================================ */}
 
         {searchFinished && (
-
-          <View
-            style={
-              styles.searchFinishedContainer
-            }
-          >
-
-            <View
-              style={
-                styles.searchFinishedCard
-              }
-            >
-
-              <Text
-                style={
-                  styles.searchFinishedTitle
-                }
-              >
+          <View style={styles.searchFinishedContainer}>
+            <View style={styles.searchFinishedCard}>
+              <Text style={styles.searchFinishedTitle}>
                 Aucun conducteur trouvé
               </Text>
 
-
-              <Text
-                style={
-                  styles.searchFinishedText
-                }
-              >
+              <Text style={styles.searchFinishedText}>
                 Aucun conducteur n'a accepté votre course.
               </Text>
 
-
               <TouchableOpacity
-                style={
-                  styles.searchFinishedButton
-                }
-
-                onPress={() =>
-                  router.replace(
-                    "/(passenger)"
-                  )
-                }
+                style={styles.searchFinishedButton}
+                onPress={() => router.replace("/(passenger)")}
               >
-
-                <Text
-                  style={
-                    styles.searchFinishedButtonText
-                  }
-                >
+                <Text style={styles.searchFinishedButtonText}>
                   Retour à l'accueil
                 </Text>
-
               </TouchableOpacity>
-
             </View>
-
           </View>
-
         )}
 
+        {/* ============================================
+            PANNEAU DÉVELOPPEUR
+        ============================================ */}
 
-        {/* ============ PANNEAU DE DÉVELOPPEMENT ============ */}
+        {__DEV__ && ride?.id && (
+          <View style={styles.developerPanel}>
+            <DeveloperPanel
+              rideRequests={rideRequests}
+              onAcceptRequest={handleDebugAcceptRequest}
+              onRejectRequest={handleDebugRejectRequest}
+              // ======================================
+              // SIMULER UNE COURSE
+              // ======================================
 
-        {__DEV__ &&
-          ride?.id && (
+              onSimulateRide={async () => {
+                try {
+                  if (ride.status !== "searching") {
+                    console.log("❌ La course n'est plus en recherche.");
 
-            <View
-              style={
-                styles.developerPanel
-              }
-            >
-
-              <DeveloperPanel
-
-                /*
-                 * Toutes les demandes broadcast
-                 * créées dans ride_requests.
-                 *
-                 * Elles sont classées par distance.
-                 */
-
-                rideRequests={
-                  rideRequests
-                }
-
-
-                /*
-                 * Lorsqu'on appuie sur
-                 * "Accepter" pour une demande.
-                 */
-
-                onAcceptRequest={
-                  handleDebugAcceptRequest
-                }
-
-
-                /*
-                 * Lorsqu'on appuie sur
-                 * "Refuser" pour une demande.
-                 */
-
-                onRejectRequest={
-                  handleDebugRejectRequest
-                }
-
-
-                /*
-                 * Ancien bouton :
-                 * Simuler une course
-                 */
-
-                onSimulateRide={
-                  async () => {
-
-                    try {
-
-                      if (
-                        ride.status ===
-                        "search_failed"
-                      ) {
-
-                        console.log(
-                          "❌ La recherche a déjà échoué."
-                        );
-
-                        return;
-
-                      }
-
-
-                      if (
-                        !nearbyDrivers.length
-                      ) {
-
-                        console.log(
-                          "❌ Aucun conducteur disponible."
-                        );
-
-                        return;
-
-                      }
-
-
-                      await debugSimulateRide(
-
-                        ride.id,
-
-                        nearbyDrivers[0]
-
-                      );
-
-
-                    } catch (error) {
-
-                      console.log(
-                        error
-                      );
-
-                    }
-
+                    return;
                   }
-                }
 
+                  if (!nearbyDrivers.length) {
+                    console.log("❌ Aucun conducteur disponible.");
 
-                /*
-                 * Ancien bouton :
-                 * Accepter la course
-                 *
-                 * On conserve ce bouton
-                 * pour les anciens tests.
-                 */
-
-                onAcceptRide={
-                  async () => {
-
-                    try {
-
-                      const selectedDriver =
-                        nearbyDrivers.find(
-
-                          (d) =>
-                            d.id ===
-                            ride.currentSearchingDriverId
-
-                        ) || null;
-
-
-                      if (
-                        !selectedDriver
-                      ) {
-
-                        console.log(
-                          "❌ Aucun conducteur."
-                        );
-
-                        return;
-
-                      }
-
-
-                      /*
-                       * Ancienne simulation
-                       * d'acceptation.
-                       */
-
-                      await debugSimulateRide(
-
-                        ride.id,
-
-                        selectedDriver
-
-                      );
-
-
-                      await updateDoc(
-
-                        doc(
-                          db,
-                          "rides",
-                          ride.id
-                        ),
-
-                        {
-
-                          status:
-                            "driver_arriving",
-
-                          driverArrivingAt:
-                            serverTimestamp(),
-
-                        }
-
-                      );
-
-
-                      console.log(
-                        "🚕 Conducteur sélectionné :",
-                        selectedDriver
-                      );
-
-
-                      /*
-                       * Simulation du déplacement
-                       * du conducteur.
-                       */
-
-                      await startDriverMovement({
-
-                        driverId:
-                          selectedDriver.id,
-
-
-                        startLocation: {
-
-                          latitude:
-                            selectedDriver.latitude,
-
-                          longitude:
-                            selectedDriver.longitude,
-
-                        },
-
-
-                        endLocation: {
-
-                          latitude:
-                            ride.pickup.latitude,
-
-                          longitude:
-                            ride.pickup.longitude,
-
-                        },
-
-
-                        onFinished:
-                          async () => {
-
-                            await updateDoc(
-
-                              doc(
-                                db,
-                                "rides",
-                                ride.id
-                              ),
-
-                              {
-
-                                status:
-                                  "started",
-
-                                startedAt:
-                                  serverTimestamp(),
-
-                              }
-
-                            );
-
-
-                            console.log(
-                              "🚗 Conducteur arrivé."
-                            );
-
-                          },
-
-                      });
-
-
-                    } catch (error) {
-
-                      console.log(
-                        error
-                      );
-
-                    }
-
+                    return;
                   }
+
+                  await debugSimulateRide(
+                    ride.id,
+
+                    nearbyDrivers[0],
+                  );
+                } catch (error) {
+                  console.log("❌ Erreur simulation :", error);
                 }
+              }}
+              // ======================================
+              // ANCIEN BOUTON ACCEPTER
+              // ======================================
 
+              onAcceptRide={handleOldAcceptRide}
+              // ======================================
+              // DÉPLACER CONDUCTEUR
+              // ======================================
 
-                /*
-                 * Bouton :
-                 * Terminer la course
-                 */
+              onMoveDriver={handleMoveDriver}
+              // ======================================
+              // DÉMARRER COURSE
+              // ======================================
 
-                onFinishRide={
-                  async () => {
+              onStartRide={handleStartRide}
+              // ======================================
+              // TERMINER
+              // ======================================
 
-                    try {
+              onFinishRide={handleFinishRide}
+              // ======================================
+              // ANNULER
+              // ======================================
 
-                      await debugFinishRide(
-                        ride.id
-                      );
+              onCancelRide={handleDebugCancelRide}
+              // ======================================
+              // RESET
+              // ======================================
 
+              onResetRide={handleResetRide}
+              // ======================================
+              // DEMANDE SIMULÉE
+              // ======================================
 
-                      console.log(
-                        "🏁 Course terminée"
-                      );
-
-
-                    } catch (error) {
-
-                      console.log(
-                        error
-                      );
-
-                    }
-
-                  }
-                }
-
-
-                /*
-                 * Bouton :
-                 * Annuler la course
-                 */
-
-                onCancelRide={
-                  async () => {
-
-                    try {
-
-                      await debugCancelRide(
-                        ride.id
-                      );
-
-
-                      console.log(
-                        "❌ Course annulée"
-                      );
-
-
-                    } catch (error) {
-
-                      console.log(
-                        error
-                      );
-
-                    }
-
-                  }
-                }
-
-
-                /*
-                 * Bouton :
-                 * Réinitialiser
-                 */
-
-                onResetRide={
-                  async () => {
-
-                    try {
-
-                      await debugResetRide(
-                        ride.id
-                      );
-
-
-                      console.log(
-                        "🔄 Course réinitialisée"
-                      );
-
-
-                    } catch (error) {
-
-                      console.log(
-                        error
-                      );
-
-                    }
-
-                  }
-                }
-
-
-                /*
-                 * Simulation d'une demande.
-                 */
-
-                onIncomingRide={
-                  () => {
-
-                    console.log(
-                      "📞 Simulation demande"
-                    );
-
-                  }
-                }
-
-
-                /*
-                 * Ces deux callbacks sont conservés
-                 * pour garder DeveloperPanel
-                 * compatible avec sa nouvelle version.
-                 */
-
-                onMoveDriver={
-                  () => {
-
-                    console.log(
-                      "📍 Déplacement conducteur"
-                    );
-
-                  }
-                }
-
-
-                onStartRide={
-                  () => {
-
-                    console.log(
-                      "🚗 Démarrage course"
-                    );
-
-                  }
-                }
-
-              />
-
-            </View>
-
-          )}
-
+              onIncomingRide={() => {
+                console.log("📞 Simulation demande");
+              }}
+            />
+          </View>
+        )}
       </SafeAreaView>
-
     </GestureHandlerRootView>
-
   );
-
 }
-
 
 // =====================================================
 // STYLES
 // =====================================================
 
-const styles =
-  StyleSheet.create({
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
 
-    container: {
+    backgroundColor: "#FFF",
+  },
 
-      flex: 1,
+  loadingContainer: {
+    flex: 1,
 
-      backgroundColor:
-        "#FFF",
+    justifyContent: "center",
 
+    alignItems: "center",
+  },
+
+  bottomBanner: {
+    position: "absolute",
+
+    left: 16,
+
+    right: 16,
+
+    bottom: 30,
+
+    zIndex: 200,
+  },
+
+  developerPanel: {
+    position: "absolute",
+
+    left: 0,
+
+    right: 0,
+
+    bottom: 0,
+
+    zIndex: 300,
+  },
+
+  searchFinishedContainer: {
+    position: "absolute",
+
+    left: 20,
+
+    right: 20,
+
+    bottom: 100,
+
+    zIndex: 250,
+  },
+
+  searchFinishedCard: {
+    backgroundColor: "#FFFFFF",
+
+    borderRadius: 18,
+
+    padding: 20,
+
+    elevation: 8,
+
+    shadowOpacity: 0.15,
+
+    shadowRadius: 10,
+
+    shadowOffset: {
+      width: 0,
+
+      height: 4,
     },
+  },
 
+  searchFinishedTitle: {
+    fontSize: 19,
 
-    loadingContainer: {
+    fontWeight: "700",
 
-      flex: 1,
+    textAlign: "center",
 
-      justifyContent:
-        "center",
+    marginBottom: 8,
+  },
 
-      alignItems:
-        "center",
+  searchFinishedText: {
+    fontSize: 15,
 
-    },
+    textAlign: "center",
 
+    color: "#666",
 
-    bottomBanner: {
+    marginBottom: 18,
+  },
 
-      position:
-        "absolute",
+  searchFinishedButton: {
+    backgroundColor: "#0B6E4F",
 
-      left: 16,
+    borderRadius: 12,
 
-      right: 16,
+    paddingVertical: 13,
 
-      bottom: 30,
+    alignItems: "center",
+  },
 
-      zIndex: 200,
+  searchFinishedButtonText: {
+    color: "#FFFFFF",
 
-    },
+    fontSize: 15,
 
-
-    developerPanel: {
-
-      position:
-        "absolute",
-
-      left: 0,
-
-      right: 0,
-
-      bottom: 0,
-
-      zIndex: 300,
-
-    },
-
-
-    searchFinishedContainer: {
-
-      position:
-        "absolute",
-
-      left: 20,
-
-      right: 20,
-
-      bottom: 100,
-
-      zIndex: 250,
-
-    },
-
-
-    searchFinishedCard: {
-
-      backgroundColor:
-        "#FFFFFF",
-
-      borderRadius:
-        18,
-
-      padding:
-        20,
-
-      elevation:
-        8,
-
-      shadowOpacity:
-        0.15,
-
-      shadowRadius:
-        10,
-
-      shadowOffset: {
-
-        width: 0,
-
-        height: 4,
-
-      },
-
-    },
-
-
-    searchFinishedTitle: {
-
-      fontSize:
-        19,
-
-      fontWeight:
-        "700",
-
-      textAlign:
-        "center",
-
-      marginBottom:
-        8,
-
-    },
-
-
-    searchFinishedText: {
-
-      fontSize:
-        15,
-
-      textAlign:
-        "center",
-
-      color:
-        "#666",
-
-      marginBottom:
-        18,
-
-    },
-
-
-    searchFinishedButton: {
-
-      backgroundColor:
-        "#0B6E4F",
-
-      borderRadius:
-        12,
-
-      paddingVertical:
-        13,
-
-      alignItems:
-        "center",
-
-    },
-
-
-    searchFinishedButtonText: {
-
-      color:
-        "#FFFFFF",
-
-      fontSize:
-        15,
-
-      fontWeight:
-        "700",
-
-    },
-
-  });
+    fontWeight: "700",
+  },
+});

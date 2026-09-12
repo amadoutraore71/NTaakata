@@ -1,13 +1,13 @@
 export default function generateRideTrackingHtml({
-    origin,
-    destination,
+    mode = "drivers",
+    passengerLocation,
+    driverLocation = null,
+    drivers = [],
     icons,
-    tripType = "pickup",
-}){
-
+    searchingDriver = null,
+}) {
     return `
 <!DOCTYPE html>
-
 <html>
 
 <head>
@@ -15,77 +15,29 @@ export default function generateRideTrackingHtml({
 <meta charset="utf-8"/>
 
 <meta
-name="viewport"
-content="width=device-width, initial-scale=1.0"/>
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+/>
 
 <link
-rel="stylesheet"
-href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"
+/>
 
 <style>
 
 html,
 body,
-#map{
-    width:100%;
-    height:100%;
-    margin:0;
-    padding:0;
+#map {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
 }
 
-.leaflet-container{
-    background:#F5F5F5;
-}
-
-/* -------- Carte conducteur -------- */
-
-.driver-tooltip{
-    background:#FFFFFF;
-    border-radius:14px;
-    padding:10px 14px;
-    box-shadow:0 4px 12px rgba(0,0,0,.18);
-    text-align:center;
-    font-family:Arial,sans-serif;
-    min-width:140px;
-    border:none;
-}
-
-.driver-name{
-    font-size:15px;
-    font-weight:bold;
-    color:#222;
-}
-
-.driver-car{
-    margin-top:4px;
-    color:#666;
-    font-size:13px;
-}
-
-.driver-rating{
-    margin-top:4px;
-    color:#F4B400;
-    font-weight:bold;
-}
-.driver-icon{
-    filter: drop-shadow(0 3px 8px rgba(0,0,0,.35));
-    animation: pulse 1.6s infinite;
-}
-
-@keyframes pulse{
-
-    0%{
-        transform: scale(1);
-    }
-
-    50%{
-        transform: scale(1.08);
-    }
-
-    100%{
-        transform: scale(1);
-    }
-
+.leaflet-container {
+    background: #F5F5F5;
 }
 
 </style>
@@ -96,796 +48,2558 @@ body,
 
 <div id="map"></div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-const PASSENGER = {
-    latitude: ${passengerLocation.latitude},
-    longitude: ${passengerLocation.longitude},
+window.ReactNativeWebView.postMessage(
+    JSON.stringify({
+        type: "debug",
+        message: "Le script HTML démarre",
+    })
+);
+
+window.onerror = function(
+    message,
+    source,
+    line,
+    col,
+    error
+) {
+
+    window.ReactNativeWebView.postMessage(
+        JSON.stringify({
+            type: "error",
+            message: String(message),
+            line,
+            col,
+            stack: error?.stack,
+        })
+    );
+
+    return true;
 };
 
-const map = L.map("map", {
-    zoomControl: false,
-}).setView(
+
+/* =====================================================
+   PASSAGER
+===================================================== */
+
+const PASSENGER = {
+
+    latitude:
+        Number(${Number(passengerLocation?.latitude)}),
+
+    longitude:
+        Number(${Number(passengerLocation?.longitude)}),
+
+};
+
+
+/* =====================================================
+   CONDUCTEUR ACCEPTÉ
+===================================================== */
+
+const DRIVER =
+    ${JSON.stringify(driverLocation)};
+
+
+/* =====================================================
+   MODE
+===================================================== */
+
+const mode =
+    ${JSON.stringify(mode)};
+
+const SEARCHING_DRIVER =
+    ${JSON.stringify(searchingDriver)};
+
+
+/* =====================================================
+   CARTE
+===================================================== */
+
+const map =
+    L.map(
+        "map",
+        {
+            zoomControl: false,
+        }
+    ).setView(
+
+        [
+            PASSENGER.latitude,
+            PASSENGER.longitude,
+        ],
+
+        15
+
+    );
+
+
+/* =====================================================
+   OPENSTREETMAP
+===================================================== */
+
+L.tileLayer(
+
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+
+    {
+        maxZoom: 19,
+
+        attribution:
+            "&copy; OpenStreetMap contributors",
+    }
+
+).addTo(map);
+
+
+/* =====================================================
+   VARIABLES
+===================================================== */
+
+const driverMarkers = {};
+
+let driversMapInitialized =
+    false;
+
+let searchLineLayer =
+    null;
+
+let searchAnimation =
+    null;
+
+let currentSearchingDriver =
+    null;
+
+let searchActive =
+    mode !== "tracking";
+
+let selectedDriver =
+    null;
+
+let selectedDriverId =
+    null;
+
+let routeLayer =
+    null;
+
+let destinationRouteLayer =
+    null;
+
+let destinationModeActive =
+    false;
+
+let firstRoute =
+    true;
+
+let lastDriverPosition =
+    null;
+
+let routeRequestInProgress =
+    false;
+
+
+/* =====================================================
+   ICÔNE PASSAGER
+===================================================== */
+
+const passengerIcon =
+    L.icon({
+
+        iconUrl:
+            "${icons.passenger}",
+
+        iconSize: [
+            40,
+            40
+        ],
+
+        iconAnchor: [
+            20,
+            40
+        ],
+
+    });
+
+
+/* =====================================================
+   MARQUEUR PASSAGER
+===================================================== */
+
+L.marker(
+
     [
         PASSENGER.latitude,
         PASSENGER.longitude,
     ],
-    15
-);
 
-L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
-        maxZoom: 19,
-        attribution: "&copy; OpenStreetMap",
+        icon:
+            passengerIcon,
     }
+
 ).addTo(map);
 
-</script>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-<script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+/* =====================================================
+   CERCLE PASSAGER
+===================================================== */
 
-<script>
-
-const map = L.map("map",{
-    zoomControl:false
-}).setView(
-[
-${origin.latitude},
-${origin.longitude}
-],
-15
-);
-
-L.tileLayer(
-"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-{
-    maxZoom:19
-}
-).addTo(map);
-
-const markers = {};
-
-const animations = {};
-const movingMarkers = {};
-const routeAnimations = {};
-
-let selectedDriver = null;
-let selectedMarker = null;
-let routeLayer = null;
-let firstRoute = true;
-let followDriver = true;
-let lastCameraUpdate = 0;
-const CAMERA_OFFSET = 0.0012;
-
-let lastRoutePosition = null;
-
-const destinationLabel =
-    tripType === "pickup"
-        ? "📍 Passager"
-        : "🎯 Destination";
-const passengerIcon = L.icon({
-
-    iconUrl:"${icons.passenger}",
-
-    iconSize:[42,42],
-
-    iconAnchor:[21,42]
-
-});
-
-const destinationIcon = L.icon({
-    iconUrl: icons.destination,
-    iconSize: [42,42],
-    iconAnchor: [21,42],
-});
-const targetIcon =
-    tripType === "pickup"
-        ? passengerIcon
-        : destinationIcon;
-L.marker(
-[
-    destination.latitude,
-    destination.longitude
-],
-{
-    icon: targetIcon,
-})
-.addTo(map)
-.bindTooltip(
-    destinationLabel,
-    {
-        permanent: true,
-        direction: "top",
-        offset: [0, -25],
-    }
-);
 L.circle(
-[
-destination.latitude,
-destination.longitude
-],
 
-{
-radius: 50,
-color:"#16A34A",
-weight:2,
-fillColor:"#22C55E",
-fillOpacity:0.20
-}).addTo(map);
-// ======================================
-// Création d'un conducteur
-// ======================================
+    [
+        PASSENGER.latitude,
+        PASSENGER.longitude,
+    ],
 
-function createMarker(driver){
+    {
 
-    const iconUrl =
-        driver.vehicleType === "moto"
-            ? driver.iconMoto
-            : driver.iconCar;
+        radius:
+            40,
 
-   const driverIcon = L.icon({
-    iconUrl: iconUrl,
-    iconSize: [46,46],
-    iconAnchor: [23,46],
-    popupAnchor: [0,-46],
-   
-    className: "driver-icon",
-});
+        color:
+            "#16A34A",
 
-    const marker = L.marker(
-        [
-            driver.latitude,
-            driver.longitude
+        fillColor:
+            "#22C55E",
+
+        fillOpacity:
+            0.25,
+
+        weight:
+            2,
+
+    }
+
+).addTo(map);
+
+
+/* =====================================================
+   ICÔNE VOITURE
+===================================================== */
+
+const carIcon =
+    L.icon({
+
+        iconUrl:
+            "${icons.car}",
+
+        iconSize: [
+            42,
+            42
         ],
-        {
-            icon:driverIcon,
-            rotationAngle:0,
-            rotationOrigin:"center center"
-        }
-    ).addTo(map);
 
+        iconAnchor: [
+            21,
+            42
+        ],
 
-    marker.on("click",function(){
-        // Remet l'ancien conducteur à sa taille normale
-       if (selectedMarker) {
-            const el = selectedMarker.getElement();
-
-            if (el) {
-                el.style.filter = "";
-                el.style.zIndex = "";
-            }
-        }
-        selectedDriver = driver;
-        selectedMarker = marker;
-        const el = marker.getElement();
-
-       if (el) {
-el.style.filter = "drop-shadow(0 0 8px #22C55E)";
-            el.style.zIndex = "999";
-        }
-        window.ReactNativeWebView.postMessage(
-            JSON.stringify({
-                type:"driver_selected",
-                driver:driver
-            })
-        );
-    redrawRoute(driver);
+        popupAnchor: [
+            0,
+            -42
+        ],
 
     });
 
-    markers[driver.id] = marker;
 
-}
+/* =====================================================
+   ICÔNE MOTO
+===================================================== */
 
+const motoIcon =
+    L.icon({
 
-// ======================================
-// Rotation véhicule
-// ======================================
+        iconUrl:
+            "${icons.moto}",
 
-function getBearing(lat1,lng1,lat2,lng2){
+        iconSize: [
+            38,
+            38
+        ],
 
-    const dLon=(lng2-lng1)*Math.PI/180;
+        iconAnchor: [
+            19,
+            38
+        ],
 
-    const y=Math.sin(dLon)*Math.cos(lat2*Math.PI/180);
+        popupAnchor: [
+            0,
+            -38
+        ],
 
-    const x=
-        Math.cos(lat1*Math.PI/180)*
-        Math.sin(lat2*Math.PI/180)
-        -
-        Math.sin(lat1*Math.PI/180)*
-        Math.cos(lat2*Math.PI/180)*
-        Math.cos(dLon);
-
-    let bearing=Math.atan2(y,x)*180/Math.PI;
-
-    return (bearing+360)%360;
-
-}
-
-function getCameraTarget(lat, lng, bearing) {
-
-    const distance = 0.0012;
-
-    const rad = bearing * Math.PI / 180;
-
-    return {
-        latitude: lat - Math.cos(rad) * distance,
-        longitude: lng - Math.sin(rad) * distance,
-    };
-
-}
+    });
 
 
-// ======================================
-// Distance entre deux points
-// ======================================
+/* =====================================================
+   POSITION D'AFFICHAGE
+===================================================== */
 
-function getDistanceMeters(lat1,lng1,lat2,lng2){
-
-    const R=6371000;
-
-    const dLat=(lat2-lat1)*Math.PI/180;
-
-    const dLng=(lng2-lng1)*Math.PI/180;
-
-    const a=
-        Math.sin(dLat/2)*Math.sin(dLat/2)+
-        Math.cos(lat1*Math.PI/180)*
-        Math.cos(lat2*Math.PI/180)*
-        Math.sin(dLng/2)*
-        Math.sin(dLng/2);
-
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-
-}
-
-function distanceBetween(lat1, lng1, lat2, lng2) {
-
-  const R = 6371000;
-
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) *
-    Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-}
-// ======================================
-// Animation du conducteur
-// ======================================
-
-function animateMarker(marker,newLat,newLng){
-
-const id = marker._leaflet_id;
-
-if (movingMarkers[id]) {
-    return;
-}
-
-movingMarkers[id] = true;
-
-   
-
-    if(animations[id]){
-        cancelAnimationFrame(animations[id]);
-    }
-
-    const start=marker.getLatLng();
-
-    const bearing=getBearing(
-        start.lat,
-        start.lng,
-        newLat,
-        newLng
-    );
-    const startAngle =
-    marker.options.rotationAngle || 0;
-
-    const duration=700;
-
-    const startTime=performance.now();
-
-    function animate(now){
-
-        const progress=Math.min(
-            (now-startTime)/duration,
-            1
-        );
-
-        const lat=
-            start.lat+
-            (newLat-start.lat)*progress;
-
-        const lng=
-            start.lng+
-            (newLng-start.lng)*progress;
-
-        marker.setLatLng([lat,lng]);
-
-       const easedProgress =
-    progress * progress * (3 - 2 * progress);
-
-const angle =
-    startAngle +
-    (bearing - startAngle) * easedProgress;
-
-        marker.setRotationAngle(angle);
-    if (
-    followDriver &&
-    selectedMarker === marker
+function getDisplayPosition(
+    driver,
+    index,
+    allDrivers
 ) {
 
-    const now = performance.now();
-
-    if (now - lastCameraUpdate > 300) {
-
-        lastCameraUpdate = now;
-
-    const camera = getCameraTarget(
-    lat,
-    lng,
-    angle
-);
-
-map.flyTo(
-    [
-        camera.latitude,
-        camera.longitude
-    ],
-    map.getZoom(),
-    {
-        animate: true,
-        duration: 0.3,
-    }
-);
-
-    }
-
-}
-        if(progress<1){
-
-            animations[id]=
-                requestAnimationFrame(animate);
-
-        } else {
-
-            marker.setLatLng([newLat, newLng]);
-                
-            marker.setRotationAngle(bearing);
-                movingMarkers[id] = false;
-            }
-
-        }
-
-    requestAnimationFrame(animate);
-
-}
-    function animateAlongRoute(marker, route) {
-        
-
-        if (routeAnimations[id]) {
-            return;
-        }
- if (!route || route.length < 2) {
-        return;
-    }
-
-    const id = marker._leaflet_id;
-
-    if (routeAnimations[id]) {
-        return;
-    }
-
-    routeAnimations[id] = true;
-
-    const current = marker.getLatLng();
-
-    let nearestIndex = 0;
-    let nearestDistance = Infinity;
-
-    for (let i = 0; i < route.length; i++) {
-
-        const point = route[i];
-
-        const distance = getDistanceMeters(
-            current.lat,
-            current.lng,
-            point[0],
-            point[1]
+    const latitude =
+        Number(
+            driver.latitude
         );
 
-        if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearestIndex = i;
-        }
-    }
-
-    if (nearestIndex >= route.length - 1) return;
-
-    const nextPoint = route[nearestIndex + 1];
-
-    animateMarker(
-        marker,
-        nextPoint[0],
-        nextPoint[1]
-    );
-    setTimeout(() => {
-    routeAnimations[id] = false;
-}, 700);
-
-}
-    // ======================================
-// Dessin de l'itinéraire
-// ======================================
-function redrawRoute(driver) {
-
-    drawRoute(
-        driver.latitude,
-        driver.longitude,
-        destination.latitude,
-        destination.longitude
-    );
-
-}
-async function drawRoute(
-    startLat,
-    startLng,
-    endLat,
-    endLng
-){
-
-    try{
-
-        // ----------------------------------
-        // Recalcul seulement après 15 mètres
-        // ----------------------------------
-
-        if(lastRoutePosition){
-
-            const moved = getDistanceMeters(
-
-                lastRoutePosition.latitude,
-                lastRoutePosition.longitude,
-
-                endLat,
-                endLng
-
-            );
-
-            if(moved < 15){
-
-                return;
-
-            }
-
-        }
-
-        lastRoutePosition = {
-
-            latitude:endLat,
-            longitude:endLng
-
-        };
-
-        const url =
-        "https://router.project-osrm.org/route/v1/driving/" +
-        startLng +
-        "," +
-        startLat +
-        ";" +
-        endLng +
-        "," +
-        endLat +
-        "?overview=full&geometries=geojson";
-
-        const response = await fetch(url);
-
-        const data = await response.json();
-
-        if(
-            !data.routes ||
-            data.routes.length===0
-        ){
-            return;
-        }
-const route = data.routes[0];
-
-window.currentRouteDistance = route.distance;
-
-window.currentRouteDuration = route.duration;
-window.ReactNativeWebView.postMessage(
-  JSON.stringify({
-    type: "debug",
-    message: "Envoi route_info",
-  })
-);
-window.ReactNativeWebView.postMessage(
-  JSON.stringify({
-    type: "route_info",
-    distance: route.distance,
-    duration: route.duration,
-    eta:
-      Date.now() + route.duration * 1000,
-  })
-);
-routeRequestInProgress = false;
-
-        const latLngs =
-            route.geometry.coordinates.map(point=>[
-                point[1],
-                point[0]
-            ]);
-            window.currentRoute = latLngs;
-
-        if(routeLayer){
-
-            map.removeLayer(routeLayer);
-
-        }
-
-        routeLayer = L.polyline(
-
-            latLngs,
-
-            {
-
-                color:"#16A34A",
-
-                weight:7,
-
-                opacity:0.95,
-
-                lineCap:"round",
-
-                lineJoin:"round"
-
-            }
-
-        ).addTo(map);
-if (firstRoute) {
-
-    const zoom = getZoom(route.distance);
-
-    map.flyTo(
-      [
-        (startLat + endLat) / 2,
-        (startLng + endLng) / 2,
-      ],
-      zoom,
-      {
-        animate: true,
-        duration: 0.8,
-      }
-    );
-
-    firstRoute = false;
-}
-    }
-
-    catch(error){
-
-        console.log(error);
-
-    }
-
-}
-    // ======================================
-// Supprimer un conducteur
-// ======================================
-
-function removeMarker(id){
-
-    if(!markers[id]) return;
-
-    if(animations[markers[id]._leaflet_id]){
-
-        cancelAnimationFrame(
-            animations[markers[id]._leaflet_id]
+    const longitude =
+        Number(
+            driver.longitude
         );
 
-        delete animations[
-            markers[markers[id]._leaflet_id]
+    if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
+    ) {
+
+        return [
+            latitude,
+            longitude
         ];
 
     }
 
-    map.removeLayer(markers[id]);
 
-    delete markers[id];
-
-}
-
-
-// ======================================
-// Mise à jour des conducteurs
-// ======================================
-
-function updateDrivers(drivers){
-
-    if(!Array.isArray(drivers)) return;
-
-    const activeIds=[];
-
-    drivers.forEach(driver=>{
-
-        activeIds.push(driver.id);
-
-        if(markers[driver.id]){
-
-            const marker=markers[driver.id];
-
-            const current=marker.getLatLng();
-
-            const moved=
-
-                Math.abs(current.lat-driver.latitude)>0.000001 ||
-
-                Math.abs(current.lng-driver.longitude)>0.000001;
-
-            if(moved){
+    const nearbyDrivers =
+        allDrivers.filter(
+            (
+                other
+            ) => {
 
                 if (
-                selectedDriver &&
-                selectedDriver.id=== driver.id &&
-                window.currentRoute
-            ) {
+                    !other ||
+                    other.id ===
+                        driver.id
+                ) {
 
-                animateAlongRoute(
-                    marker,
-                    window.currentRoute
-                );
+                    return false;
 
-            } else {
+                }
 
-                animateMarker(
-                    marker,
-                    driver.latitude,
-                    driver.longitude
+                if (
+                    other.latitude ==
+                        null ||
+                    other.longitude ==
+                        null
+                ) {
+
+                    return false;
+
+                }
+
+                const distance =
+                    map.distance(
+
+                        [
+                            latitude,
+                            longitude
+                        ],
+
+                        [
+                            Number(
+                                other.latitude
+                            ),
+
+                            Number(
+                                other.longitude
+                            )
+                        ]
+
+                    );
+
+                return (
+                    distance < 40
                 );
 
             }
+        );
 
-              if (
-  selectedDriver &&
-  selectedDriver.id === driver.id
-) {
 
-  selectedDriver = driver;
+    if (
+        nearbyDrivers.length === 0
+    ) {
 
-  if (!lastRoutePosition) {
-
-    lastRoutePosition = {
-      latitude: driver.latitude,
-      longitude: driver.longitude,
-    };
-    redrawRoute(driver);
-
-  } else {
-
-    const distance = distanceBetween(
-      lastRoutePosition.latitude,
-      lastRoutePosition.longitude,
-      driver.latitude,
-      driver.longitude
-    );
-
-    if (distance > 15) {
-
-      lastRoutePosition = {
-        latitude: driver.latitude,
-        longitude: driver.longitude,
-      };
-
-    redrawRoute(driver);
+        return [
+            latitude,
+            longitude
+        ];
 
     }
 
-  }
+
+    const group = [
+
+        driver,
+
+        ...nearbyDrivers,
+
+    ]
+        .filter(
+            (
+                item,
+                position,
+                array
+            ) =>
+
+                array.findIndex(
+                    (
+                        element
+                    ) =>
+                        element.id ===
+                        item.id
+                ) === position
+        )
+        .sort(
+            (
+                a,
+                b
+            ) =>
+
+                String(a.id)
+                    .localeCompare(
+                        String(b.id)
+                    )
+        );
+
+
+    const groupIndex =
+        group.findIndex(
+            (
+                item
+            ) =>
+                item.id ===
+                driver.id
+        );
+
+
+    if (
+        groupIndex === -1
+    ) {
+
+        return [
+            latitude,
+            longitude
+        ];
+
+    }
+
+
+    const radius =
+        0.00025;
+
+
+    const angle =
+
+        (
+            groupIndex *
+            (
+                360 /
+                group.length
+            )
+        )
+
+        *
+
+        Math.PI /
+        180;
+
+
+    return [
+
+        latitude +
+            Math.cos(angle) *
+            radius,
+
+        longitude +
+            Math.sin(angle) *
+            radius,
+
+    ];
 
 }
 
-            }
 
-        }
+/* =====================================================
+   ANIMATION MARQUEUR
+===================================================== */
 
-        else{
+function animateMarker(
+    marker,
+    newPosition
+) {
 
-            createMarker(driver);
+    if (
+        !marker ||
+        !Array.isArray(
+            newPosition
+        )
+    ) {
 
-        }
+        return;
 
-    });
-
-    Object.keys(markers).forEach(id=>{
-
-        if(!activeIds.includes(id)){
-
-            removeMarker(id);
-
-        }
-
-    });
-
-}
+    }
 
 
+    if (
+        marker._animationFrame
+    ) {
 
-// ======================================
-// Réception React Native
-// ======================================
-
-window.addEventListener("message",function(event){
-
-    try{
-
-        updateDrivers(
-
-            JSON.parse(event.data)
-
+        cancelAnimationFrame(
+            marker._animationFrame
         );
 
     }
 
-    catch(e){
 
-        console.log(e);
+    const start =
+        marker.getLatLng();
+
+
+    const end =
+        L.latLng(
+
+            Number(
+                newPosition[0]
+            ),
+
+            Number(
+                newPosition[1]
+            )
+
+        );
+
+
+    const duration =
+        500;
+
+
+    const startTime =
+        performance.now();
+
+
+    function animate(
+        currentTime
+    ) {
+
+        const progress =
+            Math.min(
+
+                (
+                    currentTime -
+                    startTime
+                ) /
+                duration,
+
+                1
+
+            );
+
+
+        const latitude =
+
+            start.lat +
+
+            (
+                end.lat -
+                start.lat
+            ) *
+
+            progress;
+
+
+        const longitude =
+
+            start.lng +
+
+            (
+                end.lng -
+                start.lng
+            ) *
+
+            progress;
+
+
+        marker.setLatLng(
+
+            [
+                latitude,
+                longitude
+            ]
+
+        );
+
+
+        if (
+            progress < 1
+        ) {
+
+            marker._animationFrame =
+                requestAnimationFrame(
+                    animate
+                );
+
+        } else {
+
+            marker.setLatLng(
+                end
+            );
+
+            marker._animationFrame =
+                null;
+
+        }
 
     }
 
-});
+
+    marker._animationFrame =
+        requestAnimationFrame(
+            animate
+        );
+
+}
 
 
-document.addEventListener("message", (event) => {
-  const drivers = JSON.parse(event.data);
-  showDrivers(drivers);
-});
+/* =====================================================
+   AFFICHER LES CONDUCTEURS
+===================================================== */
 
+function showDrivers(
+    driversList
+) {
 
-// ======================================
-// Erreurs JS
-// ======================================
+    if (
+        !Array.isArray(
+            driversList
+        )
+    ) {
 
-window.onerror=function(message,source,line){
+        driversList = [];
+
+    }
+
 
     window.ReactNativeWebView.postMessage(
 
         JSON.stringify({
 
-            type:"error",
+            type:
+                "debug",
 
-            message,
-
-            line
+            message:
+                "Nombre de conducteurs reçus : " +
+                driversList.length,
 
         })
 
     );
 
-};
+
+    const activeIds =
+        new Set();
 
 
+    driversList.forEach(
 
-// ======================================
-// Carte prête
-// ======================================
+        (
+            driver,
+            index
+        ) => {
 
-window.ReactNativeWebView.postMessage("Leaflet prêt");
+            if (
+                !driver
+            ) {
+
+                return;
+
+            }
+
+
+            const driverId =
+
+                String(
+
+                    driver.id ??
+                    driver.docId ??
+                    driver.userId ??
+                    ""
+
+                );
+
+
+            if (
+                !driverId
+            ) {
+
+                return;
+
+            }
+
+
+            const latitude =
+                Number(
+                    driver.latitude
+                );
+
+            const longitude =
+                Number(
+                    driver.longitude
+                );
+
+
+            if (
+                !Number.isFinite(
+                    latitude
+                ) ||
+
+                !Number.isFinite(
+                    longitude
+                )
+            ) {
+
+                return;
+
+            }
+
+
+            activeIds.add(
+                driverId
+            );
+
+
+            const normalizedDriver = {
+
+                ...driver,
+
+                id:
+                    driverId,
+
+                latitude,
+
+                longitude,
+
+            };
+
+
+            const displayPosition =
+                getDisplayPosition(
+
+                    normalizedDriver,
+
+                    index,
+
+                    driversList
+
+                );
+
+
+            /* ==========================================
+               MARQUEUR EXISTANT
+            ========================================== */
+
+            if (
+                driverMarkers[
+                    driverId
+                ]
+            ) {
+
+                animateMarker(
+
+                    driverMarkers[
+                        driverId
+                    ],
+
+                    displayPosition
+
+                );
+
+
+                driverMarkers[
+                    driverId
+                ]._driverData =
+                    normalizedDriver;
+
+
+                return;
+
+            }
+
+
+            /* ==========================================
+               CHOIX ICÔNE
+            ========================================== */
+
+            let driverIcon =
+                carIcon;
+
+
+            if (
+
+                String(
+                    normalizedDriver.vehicleType ||
+                    ""
+                ).toLowerCase() ===
+                "moto"
+
+            ) {
+
+                driverIcon =
+                    motoIcon;
+
+            }
+
+
+            /* ==========================================
+               CRÉATION MARQUEUR
+            ========================================== */
+
+            window.ReactNativeWebView.postMessage(
+
+                JSON.stringify({
+
+                    type:
+                        "debug",
+
+                    message:
+
+                        "Création du marqueur : " +
+
+                        normalizedDriver.name +
+
+                        " (" +
+
+                        latitude +
+
+                        ", " +
+
+                        longitude +
+
+                        ")",
+
+                })
+
+            );
+
+
+            const marker =
+
+                L.marker(
+
+                    displayPosition,
+
+                    {
+
+                        icon:
+                            driverIcon,
+
+                        zIndexOffset:
+
+                            driverId ===
+                            selectedDriverId
+
+                                ? 1000
+
+                                : 0,
+
+                    }
+
+                )
+
+                .addTo(map)
+
+                .bindTooltip(
+
+                    normalizedDriver.name ||
+                    "Conducteur",
+
+                    {
+
+                        direction:
+                            "top",
+
+                        offset:
+                            [
+                                0,
+                                -20
+                            ],
+
+                    }
+
+                );
+
+
+            marker._driverData =
+                normalizedDriver;
+
+
+            marker.bindPopup(
+
+                "<b>" +
+
+                (
+                    normalizedDriver.name ||
+                    "Conducteur"
+                ) +
+
+                "</b><br/>" +
+
+                (
+                    normalizedDriver.vehicleType ||
+                    ""
+                ) +
+
+                "<br/>" +
+
+                (
+
+                    normalizedDriver.distance !=
+                    null
+
+                        ? Math.round(
+                            normalizedDriver.distance
+                        ) + " m"
+
+                        : ""
+
+                )
+
+            );
+
+
+            /* ==========================================
+               CLIC CONDUCTEUR
+            ========================================== */
+
+            marker.on(
+
+                "click",
+
+                function () {
+
+                    selectedDriverId =
+                        driverId;
+
+                    selectedDriver =
+                        normalizedDriver;
+
+
+                    window.ReactNativeWebView.postMessage(
+
+                        JSON.stringify({
+
+                            type:
+                                "driver_selected",
+
+                            driver:
+                                normalizedDriver,
+
+                        })
+
+                    );
+
+
+                    drawRoute(
+                        normalizedDriver
+                    );
+
+                }
+
+            );
+
+
+            driverMarkers[
+                driverId
+            ] =
+                marker;
+
+        }
+
+    );
+
+
+    /* ================================================
+       SUPPRESSION ANCIENS CONDUCTEURS
+    ================================================= */
+
+    if (
+        driversList.length > 0
+    ) {
+
+        Object.keys(
+            driverMarkers
+        ).forEach(
+
+            (
+                id
+            ) => {
+
+                if (
+                    !activeIds.has(
+                        id
+                    )
+                ) {
+
+                    map.removeLayer(
+                        driverMarkers[id]
+                    );
+
+                    delete driverMarkers[
+                        id
+                    ];
+
+                }
+
+            }
+
+        );
+
+    }
+
+
+    /* ================================================
+       CADRAGE INITIAL
+    ================================================= */
+
+    if (
+
+        !driversMapInitialized &&
+
+        driversList.length > 0
+
+    ) {
+
+        const bounds =
+            L.latLngBounds([]);
+
+
+        bounds.extend(
+
+            [
+                PASSENGER.latitude,
+                PASSENGER.longitude
+            ]
+
+        );
+
+
+        driversList.forEach(
+
+            (
+                driver,
+                index
+            ) => {
+
+                if (
+                    driver.latitude !=
+                        null &&
+                    driver.longitude !=
+                        null
+                ) {
+
+                    bounds.extend(
+
+                        getDisplayPosition(
+
+                            driver,
+
+                            index,
+
+                            driversList
+
+                        )
+
+                    );
+
+                }
+
+            }
+
+        );
+
+
+        if (
+            bounds.isValid()
+        ) {
+
+            map.fitBounds(
+
+                bounds,
+
+                {
+
+                    padding:
+                        [
+                            70,
+                            70
+                        ],
+
+                    maxZoom:
+                        15,
+
+                }
+
+            );
+
+        }
+
+
+        driversMapInitialized =
+            true;
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "debug",
+
+                message:
+                    "🗺️ Carte cadrée sur passager + conducteurs",
+
+            })
+
+        );
+
+    }
+
+
+    window.ReactNativeWebView.postMessage(
+
+        JSON.stringify({
+
+            type:
+                "debug",
+
+            message:
+                "Marqueurs actuellement sur la carte : " +
+
+                Object.keys(
+                    driverMarkers
+                ).length,
+
+        })
+
+    );
+
+}
+
+
+/* =====================================================
+   DISTANCE
+===================================================== */
+
+function distanceBetween(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+) {
+
+    const R =
+        6371000;
+
+
+    const dLat =
+        (
+            lat2 -
+            lat1
+        ) *
+        Math.PI /
+        180;
+
+
+    const dLon =
+        (
+            lon2 -
+            lon1
+        ) *
+        Math.PI /
+        180;
+
+
+    const a =
+
+        Math.sin(
+            dLat / 2
+        ) ** 2
+
+        +
+
+        Math.cos(
+            lat1 *
+            Math.PI /
+            180
+        )
+
+        *
+
+        Math.cos(
+            lat2 *
+            Math.PI /
+            180
+        )
+
+        *
+
+        Math.sin(
+            dLon / 2
+        ) ** 2;
+
+
+    return (
+
+        R *
+        2 *
+        Math.atan2(
+
+            Math.sqrt(a),
+
+            Math.sqrt(
+                1 - a
+            )
+
+        )
+
+    );
+
+}
+    /* =====================================================
+   SUPPRIMER LIGNE DE RECHERCHE
+===================================================== */
+
+function removeSearchingLine() {
+
+    console.log(
+        "🧹 removeSearchingLine() appelée"
+    );
+
+
+    if (
+        searchAnimation !== null
+    ) {
+
+        clearInterval(
+            searchAnimation
+        );
+
+        searchAnimation =
+            null;
+
+    }
+
+
+    if (
+        searchLineLayer !== null
+    ) {
+
+        try {
+
+            if (
+                map.hasLayer(
+                    searchLineLayer
+                )
+            ) {
+
+                map.removeLayer(
+                    searchLineLayer
+                );
+
+            }
+
+        } catch (
+            error
+        ) {
+
+            console.log(
+                "⚠️ Erreur suppression ligne :",
+                error
+            );
+
+        }
+
+
+        searchLineLayer =
+            null;
+
+    }
+
+
+    currentSearchingDriver =
+        null;
+
+}
+
+
+/* =====================================================
+   LIGNE CONDUCTEUR RECHERCHÉ → PASSAGER
+===================================================== */
+
+function drawSearchingLine(
+    driver
+) {
+
+    if (
+        !driver
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        !searchActive
+    ) {
+
+        console.log(
+            "⛔ Recherche inactive → ligne non créée"
+        );
+
+        return;
+
+    }
+
+
+    const driverId =
+
+        String(
+
+            driver.id ??
+            driver.docId ??
+            driver.userId ??
+            ""
+
+        );
+
+
+    if (
+        currentSearchingDriver ===
+        driverId
+    ) {
+
+        return;
+
+    }
+
+
+    const latitude =
+        Number(
+            driver.latitude
+        );
+
+    const longitude =
+        Number(
+            driver.longitude
+        );
+
+
+    if (
+        !Number.isFinite(
+            latitude
+        ) ||
+        !Number.isFinite(
+            longitude
+        )
+    ) {
+
+        return;
+
+    }
+
+
+    removeSearchingLine();
+
+
+    searchLineLayer =
+        L.polyline(
+
+            [
+
+                [
+                    PASSENGER.latitude,
+                    PASSENGER.longitude
+                ],
+
+                [
+                    latitude,
+                    longitude
+                ]
+
+            ],
+
+            {
+
+                color:
+                    "#3B82F6",
+
+                weight:
+                    5,
+
+                opacity:
+                    0.9,
+
+                dashArray:
+                    "12 12",
+
+                lineCap:
+                    "round",
+
+            }
+
+        ).addTo(
+            map
+        );
+
+
+    searchLineLayer.bringToFront();
+
+
+    window.ReactNativeWebView.postMessage(
+
+        JSON.stringify({
+
+            type:
+                "debug",
+
+            message:
+                "✅ searchLine créée",
+
+        })
+
+    );
+
+
+    let offset =
+        0;
+
+
+    searchAnimation =
+        setInterval(
+
+            () => {
+
+                if (
+                    !searchLineLayer
+                ) {
+
+                    return;
+
+                }
+
+
+                offset +=
+                    2;
+
+
+                searchLineLayer.setStyle({
+
+                    dashOffset:
+                        String(
+                            -offset
+                        ),
+
+                });
+
+            },
+
+            40
+
+        );
+
+
+    currentSearchingDriver =
+        driverId;
+
+}
+
+
+/* =====================================================
+   SUPPRIMER ROUTE CONDUCTEUR → PASSAGER
+===================================================== */
+
+function removeDriverRoute() {
+
+    if (
+        routeLayer
+    ) {
+
+        try {
+
+            map.removeLayer(
+                routeLayer
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.log(
+                "⚠️ Erreur suppression route conducteur :",
+                error
+            );
+
+        }
+
+
+        routeLayer =
+            null;
+
+    }
+
+}
+
+
+/* =====================================================
+   SUPPRIMER ROUTE DESTINATION
+===================================================== */
+
+function removeDestinationRoute() {
+
+    if (
+        destinationRouteLayer
+    ) {
+
+        try {
+
+            map.removeLayer(
+                destinationRouteLayer
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.log(
+                "⚠️ Erreur suppression route destination :",
+                error
+            );
+
+        }
+
+
+        destinationRouteLayer =
+            null;
+
+    }
+
+
+    destinationModeActive =
+        false;
+
+}
+
+
+/* =====================================================
+   ROUTE CONDUCTEUR → PASSAGER
+===================================================== */
+
+async function drawRoute(
+    driver
+) {
+
+    if (
+        !driver
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        routeRequestInProgress
+    ) {
+
+        return;
+
+    }
+
+
+    const latitude =
+        Number(
+            driver.latitude
+        );
+
+    const longitude =
+        Number(
+            driver.longitude
+        );
+
+
+    if (
+        !Number.isFinite(
+            latitude
+        ) ||
+        !Number.isFinite(
+            longitude
+        )
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        lastDriverPosition
+    ) {
+
+        const distance =
+            distanceBetween(
+
+                lastDriverPosition.latitude,
+
+                lastDriverPosition.longitude,
+
+                latitude,
+
+                longitude
+
+            );
+
+
+        if (
+            distance < 15
+        ) {
+
+            return;
+
+        }
+
+    }
+
+
+    lastDriverPosition = {
+
+        latitude,
+
+        longitude,
+
+    };
+
+
+    routeRequestInProgress =
+        true;
+
+
+    try {
+
+        const url =
+
+            "https://router.project-osrm.org/route/v1/driving/" +
+
+            longitude +
+            "," +
+            latitude +
+
+            ";" +
+
+            PASSENGER.longitude +
+            "," +
+            PASSENGER.latitude +
+
+            "?overview=full&geometries=geojson";
+
+
+        const response =
+            await fetch(
+                url
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                "OSRM HTTP " +
+                response.status
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.routes ||
+            data.routes.length === 0
+        ) {
+
+            return;
+
+        }
+
+
+        const route =
+            data.routes[0];
+
+
+        const latLngs =
+            route.geometry.coordinates.map(
+
+                (
+                    point
+                ) => [
+
+                    Number(
+                        point[1]
+                    ),
+
+                    Number(
+                        point[0]
+                    ),
+
+                ]
+
+            );
+
+
+        removeDriverRoute();
+
+
+        routeLayer =
+            L.polyline(
+
+                latLngs,
+
+                {
+
+                    color:
+                        "#16A34A",
+
+                    weight:
+                        6,
+
+                    opacity:
+                        0.9,
+
+                }
+
+            ).addTo(
+                map
+            );
+
+
+        try {
+
+            map.fitBounds(
+
+                routeLayer.getBounds(),
+
+                {
+
+                    padding:
+                        [
+                            50,
+                            50
+                        ],
+
+                }
+
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.log(
+                "⚠️ Impossible d'ajuster la carte :",
+                error
+            );
+
+        }
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "route_info",
+
+                distance:
+                    Number(
+                        route.distance
+                    ) / 1000,
+
+                duration:
+                    Number(
+                        route.duration
+                    ) / 60,
+
+                eta:
+                    Math.ceil(
+                        Number(
+                            route.duration
+                        ) / 60
+                    ),
+
+            })
+
+        );
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "debug",
+
+                message:
+                    "✅ Route conducteur → passager créée",
+
+            })
+
+        );
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.log(
+            "❌ Erreur calcul route :",
+            error
+        );
+
+    }
+
+    finally {
+
+        routeRequestInProgress =
+            false;
+
+    }
+
+}
+
+
+/* =====================================================
+   ROUTE CONDUCTEUR → DESTINATION
+===================================================== */
+
+async function drawDestinationRoute(
+    driver
+) {
+
+    if (
+        !driver ||
+        !driver.destination
+    ) {
+
+        console.log(
+            "❌ Destination absente"
+        );
+
+        return;
+
+    }
+
+
+    const driverLatitude =
+        Number(
+            driver.latitude
+        );
+
+    const driverLongitude =
+        Number(
+            driver.longitude
+        );
+
+
+    const destinationLatitude =
+        Number(
+            driver.destination.latitude
+        );
+
+    const destinationLongitude =
+        Number(
+            driver.destination.longitude
+        );
+
+
+    if (
+
+        !Number.isFinite(
+            driverLatitude
+        ) ||
+
+        !Number.isFinite(
+            driverLongitude
+        ) ||
+
+        !Number.isFinite(
+            destinationLatitude
+        ) ||
+
+        !Number.isFinite(
+            destinationLongitude
+        )
+
+    ) {
+
+        console.log(
+            "❌ Coordonnées destination invalides"
+        );
+
+        return;
+
+    }
+
+
+    destinationModeActive =
+        true;
+
+
+    removeSearchingLine();
+
+    removeDriverRoute();
+
+    removeDestinationRoute();
+
+
+    const url =
+
+        "https://router.project-osrm.org/route/v1/driving/" +
+
+        driverLongitude +
+        "," +
+        driverLatitude +
+
+        ";" +
+
+        destinationLongitude +
+        "," +
+        destinationLatitude +
+
+        "?overview=full&geometries=geojson";
+
+
+    try {
+
+        const response =
+            await fetch(
+                url
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                "OSRM HTTP " +
+                response.status
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.routes ||
+            data.routes.length === 0
+        ) {
+
+            throw new Error(
+                "Aucune route destination"
+            );
+
+        }
+
+
+        const route =
+            data.routes[0];
+
+
+        const latLngs =
+            route.geometry.coordinates.map(
+
+                (
+                    point
+                ) => [
+
+                    Number(
+                        point[1]
+                    ),
+
+                    Number(
+                        point[0]
+                    ),
+
+                ]
+
+            );
+
+
+        destinationRouteLayer =
+            L.polyline(
+
+                latLngs,
+
+                {
+
+                    color:
+                        "#16A34A",
+
+                    weight:
+                        6,
+
+                    opacity:
+                        0.9,
+
+                }
+
+            ).addTo(
+                map
+            );
+
+
+        try {
+
+            map.fitBounds(
+
+                destinationRouteLayer
+                    .getBounds(),
+
+                {
+
+                    padding:
+                        [
+                            50,
+                            50
+                        ],
+
+                }
+
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.log(
+                "⚠️ fitBounds destination impossible :",
+                error
+            );
+
+        }
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "destination_route_info",
+
+                distance:
+                    Number(
+                        route.distance
+                    ) / 1000,
+
+                duration:
+                    Number(
+                        route.duration
+                    ) / 60,
+
+                eta:
+                    Math.ceil(
+                        Number(
+                            route.duration
+                        ) / 60
+                    ),
+
+            })
+
+        );
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "debug",
+
+                message:
+                    "✅ Route conducteur → destination créée",
+
+            })
+
+        );
+
+    }
+
+    catch (
+        error
+    ) {
+
+        destinationModeActive =
+            false;
+
+
+        console.log(
+            "❌ Erreur route destination :",
+            error
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   MESSAGES REACT NATIVE → WEBVIEW
+===================================================== */
+
+function handleReactNativeMessage(
+    event
+) {
+
+    try {
+
+        const rawData =
+            event.data;
+
+
+        const data =
+
+            typeof rawData ===
+            "string"
+
+                ? JSON.parse(
+                    rawData
+                )
+
+                : rawData;
+
+
+        console.log(
+            "📩 React Native → Leaflet :",
+            data
+        );
+
+
+        /* ==========================================
+           NOUVEAU FORMAT :
+           {
+             type: "drivers",
+             drivers: [...]
+           }
+        ========================================== */
+
+        if (
+            data &&
+            data.type ===
+            "drivers"
+        ) {
+
+            showDrivers(
+                Array.isArray(
+                    data.drivers
+                )
+                    ? data.drivers
+                    : []
+            );
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           ANCIEN FORMAT :
+           [...]
+        ========================================== */
+
+        if (
+            Array.isArray(
+                data
+            )
+        ) {
+
+            showDrivers(
+                data
+            );
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           CONDUCTEUR RECHERCHÉ
+        ========================================== */
+
+        if (
+            data.type ===
+            "searching_driver"
+        ) {
+
+            searchActive =
+                true;
+
+
+            currentSearchingDriver =
+                null;
+
+
+            if (
+                data.driver
+            ) {
+
+                drawSearchingLine(
+                    data.driver
+                );
+
+            }
+
+            else {
+
+                removeSearchingLine();
+
+            }
+
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           FIN RECHERCHE
+        ========================================== */
+
+        if (
+            data.type ===
+            "clear_search"
+        ) {
+
+            searchActive =
+                false;
+
+
+            removeSearchingLine();
+
+
+            /*
+             * IMPORTANT :
+             * on ne supprime PAS
+             * les conducteurs de la carte.
+             */
+
+            window.ReactNativeWebView.postMessage(
+
+                JSON.stringify({
+
+                    type:
+                        "debug",
+
+                    message:
+                        "🧹 Recherche terminée — conducteurs conservés",
+
+                })
+
+            );
+
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           ROUTE CONDUCTEUR → PASSAGER
+        ========================================== */
+
+        if (
+            data.type ===
+            "start_driver_route"
+        ) {
+
+            searchActive =
+                false;
+
+
+            removeSearchingLine();
+
+
+            if (
+                data.driver
+            ) {
+
+                showDrivers(
+                    [
+                        data.driver
+                    ]
+                );
+
+
+                drawRoute(
+                    data.driver
+                );
+
+            }
+
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           ROUTE CONDUCTEUR → DESTINATION
+        ========================================== */
+
+        if (
+            data.type ===
+            "start_destination_route"
+        ) {
+
+            searchActive =
+                false;
+
+
+            removeSearchingLine();
+
+
+            if (
+                data.driver
+            ) {
+
+                showDrivers(
+                    [
+                        data.driver
+                    ]
+                );
+
+
+                drawDestinationRoute(
+                    data.driver
+                );
+
+            }
+
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           ARRÊT ROUTE DESTINATION
+        ========================================== */
+
+        if (
+            data.type ===
+            "stop_destination_route" ||
+
+            data.type ===
+            "clear_destination_route"
+        ) {
+
+            removeDestinationRoute();
+
+            return;
+
+        }
+
+
+        /* ==========================================
+           CARTE PRÊTE
+        ========================================== */
+
+        if (
+            data.type ===
+            "ready"
+        ) {
+
+            return;
+
+        }
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            "❌ Erreur réception message :",
+            error
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   ÉCOUTE WEBVIEW
+===================================================== */
+
+document.addEventListener(
+
+    "message",
+
+    handleReactNativeMessage
+
+);
+
+
+window.addEventListener(
+
+    "message",
+
+    handleReactNativeMessage
+
+);
+
+
+/* =====================================================
+   INITIALISATION DES CONDUCTEURS
+===================================================== */
+
+try {
+
+    const initialDrivers =
+        ${JSON.stringify(drivers || [])};
+
+
+    if (
+        Array.isArray(
+            initialDrivers
+        ) &&
+        initialDrivers.length > 0
+    ) {
+
+        showDrivers(
+            initialDrivers
+        );
+
+    }
+
+
+    /* ================================================
+       CONDUCTEUR ACCEPTÉ
+    ================================================= */
+
+    if (
+        mode ===
+        "tracking" &&
+        DRIVER
+    ) {
+
+        showDrivers(
+            [
+                DRIVER
+            ]
+        );
+
+
+        window.ReactNativeWebView.postMessage(
+
+            JSON.stringify({
+
+                type:
+                    "debug",
+
+                message:
+                    "🚗 Conducteur accepté affiché en mode tracking : " +
+                    (
+                        DRIVER.name ||
+                        "Conducteur"
+                    ),
+
+            })
+
+        );
+
+    }
+
+
+    /* ================================================
+       CONDUCTEUR RECHERCHÉ AU DÉMARRAGE
+    ================================================= */
+
+    if (
+        mode !== "tracking" &&
+        SEARCHING_DRIVER
+    ) {
+
+        searchActive =
+            true;
+
+
+        drawSearchingLine(
+            SEARCHING_DRIVER
+        );
+
+    }
+
+}
+
+catch (
+    error
+) {
+
+    console.error(
+        "❌ Erreur initialisation conducteurs :",
+        error
+    );
+
+}
+
+
+/* =====================================================
+   CARTE PRÊTE
+===================================================== */
+
+window.ReactNativeWebView.postMessage(
+
+    JSON.stringify({
+
+        type:
+            "ready",
+
+    })
+
+);
+
+
+window.ReactNativeWebView.postMessage(
+
+    JSON.stringify({
+
+        type:
+            "debug",
+
+        message:
+            "Leaflet initialisé",
+
+    })
+
+);
 
 </script>
 
 </body>
 
 </html>
-
 `;
-
 }

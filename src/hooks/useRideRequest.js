@@ -86,6 +86,33 @@ console.log("Conducteurs disponibles :", drivers.length);
 console.log("Conducteur choisi :", nearestDriver.name);
 console.log("Distance :", nearestDriver.distance, "m");
 console.log("==============================");
+console.log("========== POSITION COURSE ==========");
+
+console.log(
+  "📍 currentLocation :",
+  JSON.stringify(currentLocation, null, 2)
+);
+
+console.log(
+  "📍 PICKUP envoyé :",
+  JSON.stringify({
+    latitude: currentLocation.coords.latitude,
+    longitude: currentLocation.coords.longitude,
+    address: pickup,
+  }, null, 2)
+);
+
+console.log(
+  "🚕 DRIVER choisi :",
+  JSON.stringify({
+    id: nearestDriver.id,
+    name: nearestDriver.name,
+    latitude: nearestDriver.latitude,
+    longitude: nearestDriver.longitude,
+  }, null, 2)
+);
+
+console.log("======================================");
       stopLocation();
 
       const rideId = await createRide({
