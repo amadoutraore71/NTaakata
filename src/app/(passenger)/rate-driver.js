@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
 import {
   Alert,
-
+  Animated,
+  Easing,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
@@ -19,377 +21,1077 @@ import {
   addDoc,
   collection,
   doc,
-  getDocs,
-  query,
+  getDoc,
   updateDoc,
-  where,
 } from "firebase/firestore";
+
 import { db } from "../../../firebase/config";
+
 import AppHeader from "../../components/AppHeader";
 
 export default function RateDriver() {
 
-  const { rideId, driverPhone } =
+  const { rideId } =
     useLocalSearchParams();
 
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [selectedTags, setSelectedTags] = useState([]);
+  // =====================================================
+  // ÉTATS
+  // =====================================================
 
-  const tags = [
-    "Conducteur poli",
-    "Ponctuel",
-    "Véhicule propre",
-    "Bonne conduite",
-    "Respectueux",
-  ];
+  const [rating, setRating] =
+    useState(0);
 
-  const toggleTag = (tag) => {
+  const [loading, setLoading] =
+    useState(false);
 
-    if (selectedTags.includes(tag)) {
+  const [ridePrice, setRidePrice] =
+    useState(null);
 
-      setSelectedTags(
-        selectedTags.filter(
-          (item) => item !== tag
-        )
-      );
+  const [rideDistance, setRideDistance] =
+    useState(null);
 
-    } else {
+  // =====================================================
+  // ANIMATIONS
+  // =====================================================
 
-      setSelectedTags([
-        ...selectedTags,
-        tag,
-      ]);
+  const fadeAnim =
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
-    }
+  const slideAnim =
+    useRef(
+      new Animated.Value(25)
+    ).current;
 
-  };
+  const scaleAnim =
+    useRef(
+      new Animated.Value(0.94)
+    ).current;
 
-  const submitRating = async () => {
+  const successPulse =
+    useRef(
+      new Animated.Value(0)
+    ).current;
 
-    if (rating === 0) {
+  const starAnimations =
+    useRef(
+      [1, 2, 3, 4, 5].map(
+        () => new Animated.Value(1)
+      )
+    ).current;
 
-      Alert.alert(
-        "Erreur",
-        "Veuillez choisir une note."
-      );
+  // =====================================================
+  // ANIMATION ENTRÉE
+  // =====================================================
 
-      return;
+  useEffect(() => {
 
-    }
+    Animated.parallel([
 
-    try {
-
-      // Mise à jour de la course
-
-      await updateDoc(
-        doc(db, "rides", rideId),
+      Animated.timing(
+        fadeAnim,
         {
-          rating,
-          comment,
-          tags: selectedTags,
-          ratingSubmitted: true,
+          toValue: 1,
+          duration: 550,
+          easing:
+            Easing.out(
+              Easing.cubic
+            ),
+          useNativeDriver: true,
         }
-      );
-      await addDoc(
-  collection(db, "reviews"),
-  {
-    rideId,
-    driverPhone,
-    passengerPhone: "",
-    rating,
-    comment,
-    tags: selectedTags,
-    createdAt: new Date().toISOString(),
-  }
-);
+      ),
 
-      // Recherche du conducteur
+      Animated.spring(
+        slideAnim,
+        {
+          toValue: 0,
+          damping: 15,
+          stiffness: 120,
+          useNativeDriver: true,
+        }
+      ),
 
-      const driverQuery = query(
-        collection(db, "users"),
-        where(
-          "phone",
-          "==",
-          driverPhone
-        )
-      );
+      Animated.spring(
+        scaleAnim,
+        {
+          toValue: 1,
+          damping: 13,
+          stiffness: 120,
+          useNativeDriver: true,
+        }
+      ),
 
-      const snapshot =
-        await getDocs(driverQuery);
+    ]).start();
 
-      if (snapshot.empty) {
+  }, []);
+
+  // =====================================================
+  // CHARGER LA COURSE
+  // =====================================================
+
+  useEffect(() => {
+
+    const loadRide =
+      async () => {
+
+        if (!rideId) {
+          return;
+        }
+
+        try {
+
+          const rideRef =
+            doc(
+              db,
+              "rides",
+              rideId
+            );
+
+          const snapshot =
+            await getDoc(
+              rideRef
+            );
+
+          if (
+            !snapshot.exists()
+          ) {
+            return;
+          }
+
+          const ride =
+            snapshot.data();
+
+          setRidePrice(
+            Number(
+              ride.estimatedPrice || 0
+            )
+          );
+
+          setRideDistance(
+            Number(
+              ride.estimatedDistance ||
+              0
+            )
+          );
+
+        } catch (error) {
+
+          console.log(
+            "❌ Erreur chargement course :",
+            error
+          );
+
+        }
+
+      };
+
+    loadRide();
+
+  }, [rideId]);
+
+  // =====================================================
+  // ANIMATION ÉTOILE
+  // =====================================================
+
+  const animateStar =
+    (value) => {
+
+      const index =
+        value - 1;
+
+      starAnimations[
+        index
+      ].setValue(0.55);
+
+      Animated.spring(
+        starAnimations[index],
+        {
+          toValue: 1,
+          damping: 7,
+          stiffness: 220,
+          useNativeDriver: true,
+        }
+      ).start();
+
+    };
+
+  // =====================================================
+  // ENREGISTRER LA NOTE
+  // =====================================================
+
+  const submitRating =
+    async (
+      selectedRating
+    ) => {
+
+      if (
+        loading ||
+        !selectedRating ||
+        !rideId
+      ) {
+        return;
+      }
+
+      try {
+
+        setLoading(true);
+
+        // ===============================================
+        // COURSE
+        // ===============================================
+
+        const rideRef =
+          doc(
+            db,
+            "rides",
+            rideId
+          );
+
+        const rideSnapshot =
+          await getDoc(
+            rideRef
+          );
+
+        if (
+          !rideSnapshot.exists()
+        ) {
+
+          Alert.alert(
+            "Erreur",
+            "Cette course n'existe plus."
+          );
+
+          return;
+
+        }
+
+        const ride =
+          rideSnapshot.data();
+
+        // ===============================================
+        // DÉJÀ NOTÉE
+        // ===============================================
+
+        if (
+          ride.ratingSubmitted === true
+        ) {
+
+          router.replace(
+            "/(passenger)/home"
+          );
+
+          return;
+
+        }
+
+        // ===============================================
+        // CONDUCTEUR
+        // ===============================================
+
+        const driverId =
+          ride.driverId;
+
+        if (!driverId) {
+
+          Alert.alert(
+            "Erreur",
+            "Aucun conducteur associé à cette course."
+          );
+
+          return;
+
+        }
+
+        // ===============================================
+        // CONDUCTEUR
+        // ===============================================
+
+        const driverRef =
+          doc(
+            db,
+            "users",
+            driverId
+          );
+
+        const driverSnapshot =
+          await getDoc(
+            driverRef
+          );
+
+        if (
+          !driverSnapshot.exists()
+        ) {
+
+          Alert.alert(
+            "Erreur",
+            "Le conducteur est introuvable."
+          );
+
+          return;
+
+        }
+
+        const driver =
+          driverSnapshot.data();
+
+        // ===============================================
+        // ANCIENNES NOTES
+        // ===============================================
+
+        const totalRatings =
+          Number(
+            driver.totalRatings || 0
+          );
+
+        const averageRating =
+          Number(
+            driver.averageRating || 0
+          );
+
+        // ===============================================
+        // NOUVELLE MOYENNE
+        // ===============================================
+
+        const newTotalRatings =
+          totalRatings + 1;
+
+        const newAverageRating =
+          (
+            averageRating *
+              totalRatings +
+            selectedRating
+          ) /
+          newTotalRatings;
+
+        const roundedAverage =
+          Number(
+            newAverageRating.toFixed(
+              1
+            )
+          );
+
+        // ===============================================
+        // ENREGISTRER L'AVIS
+        // ===============================================
+
+        await addDoc(
+          collection(
+            db,
+            "reviews"
+          ),
+          {
+            rideId,
+
+            driverId,
+
+            driverName:
+              driver.name ??
+              "Conducteur",
+
+            passengerId:
+              ride.passengerId ??
+              null,
+
+            rating:
+              selectedRating,
+
+            ridePrice:
+              ride.estimatedPrice ??
+              0,
+
+            rideDistance:
+              ride.estimatedDistance ??
+              0,
+
+            createdAt:
+              new Date().toISOString(),
+          }
+        );
+
+        // ===============================================
+        // MARQUER LA COURSE COMME NOTÉE
+        // ===============================================
+
+        await updateDoc(
+          rideRef,
+          {
+            rating:
+              selectedRating,
+
+            ratingSubmitted:
+              true,
+          }
+        );
+
+        // ===============================================
+        // METTRE À JOUR LE CONDUCTEUR
+        // ===============================================
+
+        await updateDoc(
+          driverRef,
+          {
+            totalRatings:
+              newTotalRatings,
+
+            averageRating:
+              roundedAverage,
+          }
+        );
+
+        // ===============================================
+        // ANIMATION SUCCÈS
+        // ===============================================
+
+        Animated.sequence([
+
+          Animated.timing(
+            successPulse,
+            {
+              toValue: 1,
+              duration: 220,
+              useNativeDriver: true,
+            }
+          ),
+
+          Animated.timing(
+            successPulse,
+            {
+              toValue: 0,
+              duration: 220,
+              useNativeDriver: true,
+            }
+          ),
+
+        ]).start();
+
+        // ===============================================
+        // RETOUR ACCUEIL
+        // ===============================================
+
+        Alert.alert(
+          "Merci ❤️",
+          "Votre note a bien été enregistrée.",
+          [
+            {
+              text: "OK",
+
+              onPress: () => {
+
+                router.replace(
+                  "/(passenger)/home"
+                );
+
+              },
+            },
+          ]
+        );
+
+      } catch (error) {
+
+        console.error(
+          "❌ Erreur notation :",
+          error
+        );
 
         Alert.alert(
           "Erreur",
-          "Conducteur introuvable."
+          "Impossible d'enregistrer votre note."
         );
 
-        return;
+      } finally {
+
+        setLoading(false);
 
       }
 
-      const driverDoc =
-        snapshot.docs[0];
+    };
 
-      const driver =
-        driverDoc.data();
+  // =====================================================
+  // CHOISIR UNE NOTE
+  // =====================================================
 
-      const totalRatings =
-        driver.totalRatings || 0;
+  const handleRating =
+    async (value) => {
 
-      const averageRating =
-        driver.averageRating || 0;
+      if (loading) {
+        return;
+      }
 
-      const newTotalRatings =
-        totalRatings + 1;
+      setRating(value);
 
-      const newAverageRating =
-        (
-          (averageRating * totalRatings) +
-          rating
-        ) / newTotalRatings;
+      animateStar(value);
 
-      await updateDoc(
-        driverDoc.ref,
-        {
-          totalRatings:
-            newTotalRatings,
-
-          averageRating:
-            Number(
-              newAverageRating.toFixed(1)
-            ),
-        }
+      await submitRating(
+        value
       );
 
-      Alert.alert(
-        "Merci !",
-        "Votre avis a été enregistré."
-      );
+    };
 
-      router.replace(
-        "/(passenger)/home"
-      );
+  // =====================================================
+  // MESSAGE SELON LA NOTE
+  // =====================================================
 
-    } catch (error) {
+  const getRatingMessage =
+    () => {
 
-      console.log(error);
+      switch (rating) {
 
-      Alert.alert(
-        "Erreur",
-        "Impossible d'enregistrer votre avis."
-      );
+        case 5:
+          return "Excellent ! 🤩";
 
-    }
+        case 4:
+          return "Très bien ! 😊";
+
+        case 3:
+          return "Bien 👍";
+
+        case 2:
+          return "Peut mieux faire 😐";
+
+        case 1:
+          return "Nous ferons mieux 🙏";
+
+        default:
+          return "Choisissez une note";
+
+      }
+
+    };
+
+  // =====================================================
+  // ANIMATION PRINCIPALE
+  // =====================================================
+
+  const animatedContainerStyle = {
+
+    opacity:
+      fadeAnim,
+
+    transform: [
+
+      {
+        translateY:
+          slideAnim,
+      },
+
+      {
+        scale:
+          scaleAnim,
+      },
+
+    ],
 
   };
 
+  // =====================================================
+  // ANIMATION SUCCÈS
+  // =====================================================
+
+  const successStyle = {
+
+    transform: [
+
+      {
+
+        scale:
+          successPulse.interpolate({
+
+            inputRange: [
+              0,
+              1,
+            ],
+
+            outputRange: [
+              1,
+              1.1,
+            ],
+
+          }),
+
+      },
+
+    ],
+
+  };
+
+  // =====================================================
+  // INTERFACE
+  // =====================================================
+
   return (
 
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+    >
 
-      <AppHeader
-        title="Noter le conducteur"
-        profileRoute="/(passenger)/profile"
-      />
+     
 
-      <Text style={styles.title}>
-        Évaluez votre conducteur
-      </Text>
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={
+          false
+        }
+        contentContainerStyle={
+          styles.content
+        }
+        style={
+          animatedContainerStyle
+        }
+      >
 
-      <Text style={styles.subtitle}>
-        Comment s'est passée votre course ?
-      </Text>
+        {/* =============================================
+            ICÔNE DE FIN
+        ============================================= */}
 
-      {/* Etoiles */}
+        <Animated.View
+          style={[
+            styles.successCircle,
+            successStyle,
+          ]}
+        >
 
-      <View style={styles.stars}>
-
-        {[1,2,3,4,5].map((star)=>(
-
-          <TouchableOpacity
-            key={star}
-            onPress={() =>
-              setRating(star)
-            }
+          <Text
+            style={styles.successIcon}
           >
+            ✓
+          </Text>
 
-            <Text style={styles.star}>
-              {star <= rating ? "⭐" : "☆"}
-            </Text>
+        </Animated.View>
 
-          </TouchableOpacity>
 
-        ))}
+        {/* =============================================
+            TITRE
+        ============================================= */}
 
-      </View>
+        <Text
+          style={styles.title}
+        >
+          Course terminée !
+        </Text>
 
-      {/* Commentaire */}
 
-      <Text style={styles.label}>
-        Votre commentaire
-      </Text>
+        {/* =============================================
+            RÉSUMÉ
+        ============================================= */}
 
-      <TextInput
-        style={styles.commentInput}
-        multiline
-        numberOfLines={4}
-        placeholder="Décrivez votre expérience..."
-        value={comment}
-        onChangeText={setComment}
-      />
+        <View
+          style={styles.summaryCard}
+        >
 
-      {/* Tags */}
-
-      <Text style={styles.label}>
-        Qu'avez-vous apprécié ?
-      </Text>
-
-      <View style={styles.tagsContainer}>
-
-        {tags.map((tag)=>(
-
-          <TouchableOpacity
-            key={tag}
-            style={[
-              styles.tag,
-              selectedTags.includes(tag) &&
-              styles.tagSelected,
-            ]}
-            onPress={() =>
-              toggleTag(tag)
-            }
+          <View
+            style={styles.summaryItem}
           >
 
             <Text
-              style={[
-                styles.tagText,
-                selectedTags.includes(tag) &&
-                styles.tagTextSelected,
-              ]}
+              style={styles.summaryIcon}
             >
-              {tag}
+              💰
             </Text>
 
-          </TouchableOpacity>
+            <View>
 
-        ))}
+              <Text
+                style={
+                  styles.summaryLabel
+                }
+              >
+                Prix
+              </Text>
 
-      </View>
+              <Text
+                style={
+                  styles.summaryValue
+                }
+              >
+                {ridePrice !== null
+                  ? `${ridePrice.toLocaleString()} FCFA`
+                  : "--"}
+              </Text>
 
-      {/* Bouton */}
+            </View>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={submitRating}
-      >
+          </View>
 
-        <Text style={styles.buttonText}>
-          Envoyer mon avis
-        </Text>
 
-      </TouchableOpacity>
+          <View
+            style={
+              styles.summaryDivider
+            }
+          />
+
+
+          <View
+            style={styles.summaryItem}
+          >
+
+            <Text
+              style={styles.summaryIcon}
+            >
+              📍
+            </Text>
+
+            <View>
+
+              <Text
+                style={
+                  styles.summaryLabel
+                }
+              >
+                Distance
+              </Text>
+
+              <Text
+                style={
+                  styles.summaryValue
+                }
+              >
+                {rideDistance !== null
+                  ? `${rideDistance.toFixed(
+                      1
+                    )} km`
+                  : "--"}
+              </Text>
+
+            </View>
+
+          </View>
+
+        </View>
+
+
+        {/* =============================================
+            QUESTION
+        ============================================= */}
+
+        <View
+          style={
+            styles.ratingSection
+          }
+        >
+
+          <Text
+            style={styles.question}
+          >
+            Comment s'est passée
+            votre course ?
+          </Text>
+
+          <Text
+            style={
+              styles.questionSub
+            }
+          >
+            Votre avis nous aide à
+            améliorer N'Taakata.
+          </Text>
+
+
+          {/* ===========================================
+              ÉTOILES
+          =========================================== */}
+
+          <View
+            style={styles.stars}
+          >
+
+            {[1, 2, 3, 4, 5].map(
+              (star) => (
+
+                <TouchableOpacity
+                  key={star}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    handleRating(
+                      star
+                    )
+                  }
+                >
+
+                  <Animated.Text
+                    style={[
+
+                      styles.star,
+
+                      star <= rating &&
+                        styles.starActive,
+
+                      {
+                        transform: [
+                          {
+                            scale:
+                              starAnimations[
+                                star - 1
+                              ],
+                          },
+                        ],
+                      },
+
+                    ]}
+                  >
+
+                    {star <= rating
+                      ? "★"
+                      : "☆"}
+
+                  </Animated.Text>
+
+                </TouchableOpacity>
+
+              )
+            )}
+
+          </View>
+
+
+          {/* =========================================
+              MESSAGE NOTE
+          ========================================= */}
+
+          <Text
+            style={
+              styles.ratingMessage
+            }
+          >
+            {getRatingMessage()}
+          </Text>
+
+        </View>
+
+      </Animated.ScrollView>
 
     </SafeAreaView>
 
   );
-
 }
 
-const styles = StyleSheet.create({
 
-  container:{
-    flex:1,
-    backgroundColor:"#FFFFFF",
-    padding:20,
-  },
+// =======================================================
+// STYLES
+// =======================================================
 
-  title:{
-    marginTop:20,
-    fontSize:30,
-    fontWeight:"bold",
-    color:"#0B6E4F",
-    textAlign:"center",
-  },
+const styles =
+  StyleSheet.create({
 
-  subtitle:{
-    marginTop:10,
-    fontSize:17,
-    textAlign:"center",
-    color:"#666",
-    marginBottom:30,
-  },
+    // ===================================================
+    // CONTAINER
+    // ===================================================
 
-  stars:{
-    flexDirection:"row",
-    justifyContent:"center",
-    marginBottom:30,
-  },
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#F5FBF8",
+    },
 
-  star:{
-    fontSize:48,
-    marginHorizontal:5,
-  },
+    content: {
+      paddingHorizontal: 20,
+      paddingTop: 30,
+      paddingBottom: 40,
+      alignItems: "stretch",
+    },
 
-  label:{
-    fontSize:17,
-    fontWeight:"bold",
-    marginBottom:10,
-    color:"#222",
-  },
 
-  commentInput:{
-    borderWidth:1,
-    borderColor:"#DDD",
-    borderRadius:12,
-    padding:15,
-    minHeight:120,
-    textAlignVertical:"top",
-    marginBottom:25,
-  },
+    // ===================================================
+    // ICÔNE
+    // ===================================================
 
-  tagsContainer:{
-    flexDirection:"row",
-    flexWrap:"wrap",
-    marginBottom:30,
-  },
+    successCircle: {
+      width: 82,
+      height: 82,
+      borderRadius: 41,
+      alignSelf: "center",
+      backgroundColor:
+        "#0B6E4F",
 
-  tag:{
-    borderWidth:1,
-    borderColor:"#0B6E4F",
-    borderRadius:20,
-    paddingHorizontal:15,
-    paddingVertical:10,
-    marginRight:10,
-    marginBottom:10,
-  },
+      alignItems: "center",
+      justifyContent: "center",
 
-  tagSelected:{
-    backgroundColor:"#0B6E4F",
-  },
+      marginBottom: 18,
 
-  tagText:{
-    color:"#0B6E4F",
-    fontWeight:"600",
-  },
+      shadowColor:
+        "#0B6E4F",
 
-  tagTextSelected:{
-    color:"#FFFFFF",
-  },
+      shadowOpacity: 0.20,
 
-  button:{
-    backgroundColor:"#0B6E4F",
-    height:55,
-    borderRadius:12,
-    justifyContent:"center",
-    alignItems:"center",
-  },
+      shadowRadius: 13,
 
-  buttonText:{
-    color:"#FFFFFF",
-    fontSize:18,
-    fontWeight:"bold",
-  },
+      shadowOffset: {
+        width: 0,
+        height: 6,
+      },
 
-});
+      elevation: 7,
+    },
+
+    successIcon: {
+      fontSize: 46,
+      color: "#FFFFFF",
+      fontWeight: "900",
+    },
+
+
+    // ===================================================
+    // TITRE
+    // ===================================================
+
+    title: {
+      fontSize: 28,
+      fontWeight: "800",
+      color: "#173B30",
+      textAlign: "center",
+      marginBottom: 30,
+    },
+
+
+    // ===================================================
+    // RÉSUMÉ
+    // ===================================================
+
+    summaryCard: {
+      backgroundColor:
+        "#0B6E4F",
+
+      borderRadius: 20,
+
+      padding: 18,
+
+      flexDirection: "row",
+
+      alignItems: "center",
+
+      marginBottom: 38,
+
+      shadowColor:
+        "#0B6E4F",
+
+      shadowOpacity: 0.18,
+
+      shadowRadius: 12,
+
+      shadowOffset: {
+        width: 0,
+        height: 6,
+      },
+
+      elevation: 5,
+    },
+
+    summaryItem: {
+      flex: 1,
+
+      flexDirection: "row",
+
+      alignItems: "center",
+    },
+
+    summaryIcon: {
+      fontSize: 25,
+
+      marginRight: 10,
+    },
+
+    summaryLabel: {
+      fontSize: 12,
+
+      color: "#D1ECE2",
+
+      marginBottom: 2,
+    },
+
+    summaryValue: {
+      fontSize: 17,
+
+      color: "#FFFFFF",
+
+      fontWeight: "800",
+    },
+
+    summaryDivider: {
+      width: 1,
+
+      height: 42,
+
+      backgroundColor:
+        "rgba(255,255,255,0.25)",
+
+      marginHorizontal: 12,
+    },
+
+
+    // ===================================================
+    // NOTATION
+    // ===================================================
+
+    ratingSection: {
+      alignItems: "center",
+
+      paddingHorizontal: 5,
+    },
+
+    question: {
+      fontSize: 23,
+
+      fontWeight: "800",
+
+      color: "#173B30",
+
+      textAlign: "center",
+    },
+
+    questionSub: {
+      marginTop: 8,
+
+      fontSize: 14,
+
+      color: "#7A8983",
+
+      textAlign: "center",
+
+      lineHeight: 20,
+    },
+
+
+    // ===================================================
+    // ÉTOILES
+    // ===================================================
+
+    stars: {
+      flexDirection: "row",
+
+      alignItems: "center",
+
+      justifyContent: "center",
+
+      marginTop: 26,
+    },
+
+    star: {
+      fontSize: 56,
+
+      color: "#CBD5D0",
+
+      marginHorizontal: 3,
+    },
+
+    starActive: {
+      color: "#F2B840",
+
+      textShadowColor:
+        "rgba(242,184,64,0.25)",
+
+      textShadowRadius: 8,
+    },
+
+    ratingMessage: {
+      marginTop: 10,
+
+      fontSize: 17,
+
+      fontWeight: "800",
+
+      color: "#0B6E4F",
+
+      textAlign: "center",
+    },
+
+  });

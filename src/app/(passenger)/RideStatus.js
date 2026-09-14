@@ -350,13 +350,10 @@ export default function RideStatus() {
     router.replace({
       pathname: "/(passenger)/rate-driver",
 
-      params: {
-        rideId: ride.id,
-
-        driverPhone: ride.driverPhone ?? "",
-
-        driverName: ride.driverName ?? "",
-      },
+    params: {
+  rideId: ride.id,
+  driverName: ride.driverName ?? "",
+},
     });
   }, [ride?.status]);
 
@@ -640,26 +637,84 @@ movementRunningRef.current = true;
         // ARRIVÉE À DESTINATION
         // =========================================
 
-        onFinished: async () => {
-          try {
-            await updateDoc(doc(db, "rides", ride.id), {
-              status: "completed",
-              completedAt: serverTimestamp(),
-            });
+    onFinished: async () => {
+  try {
 
-            console.log("========================================");
+    // =================================================
+    // 1. TERMINER LA COURSE
+    // =================================================
 
-            console.log("🏁 COURSE TERMINÉE");
+    await updateDoc(
+      doc(
+        db,
+        "rides",
+        ride.id
+      ),
+      {
+        status: "completed",
 
-            console.log("📍 Conducteur arrivé à destination.");
+        completedAt:
+          serverTimestamp(),
+      }
+    );
 
-            console.log("========================================");
-          } finally {
-            movementRunningRef.current = false;
+    console.log(
+      "========================================"
+    );
 
-            console.log("🔓 movementRunning = false");
-          }
-        },
+    console.log(
+      "🏁 COURSE TERMINÉE"
+    );
+
+    console.log(
+      "📍 Conducteur arrivé à destination."
+    );
+
+    // =================================================
+    // 2. RENDRE LE CONDUCTEUR DISPONIBLE
+    // =================================================
+
+    await updateDoc(
+      doc(
+        db,
+        "users",
+        ride.driverId
+      ),
+      {
+        isOnline: true,
+
+        lastLocationUpdate:
+          new Date(),
+      }
+    );
+
+    console.log(
+      "🟢 Conducteur de nouveau disponible :",
+      ride.driverId
+    );
+
+    console.log(
+      "========================================"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "❌ Erreur clôture course :",
+      error
+    );
+
+  } finally {
+
+    movementRunningRef.current =
+      false;
+
+    console.log(
+      "🔓 movementRunning = false"
+    );
+
+  }
+},
       });
     } catch (error) {
       console.log("❌ Erreur déplacement vers destination :", error);

@@ -1,475 +1,1013 @@
-import { router, useLocalSearchParams } from "expo-router";
-
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-    doc,
-    onSnapshot,
-} from "firebase/firestore";
-
-import * as Linking from "expo-linking";
-
-import { useEffect, useState } from "react";
-
-import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    View,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
-import { SafeAreaView } from "react-native-safe-area-context";
-
-import { db } from "../../../firebase/config";
-
-import { getUser } from "../../storage/userStorage";
-
-import DriverActionButtons from "../../components/driver/DriverActionButtons";
-import DriverRideInfoCard from "../../components/driver/DriverRideInfoCard";
-import DriverRideMap from "../../components/driver/DriverRideMap";
-import DriverStatusBadge from "../../components/driver/DriverStatusBadge";
-
-import AppHeader from "../../components/AppHeader";
 
 import {
-    finishRide,
-    markDriverArrived,
-    startRide,
-} from "../../../services/driverRideService";
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+
+import { useEffect, useRef, useState } from "react";
+
+
+import DriverRideMap from "../../components/driver/DriverRideMap";
+
+import { db } from "../../../firebase/config";
+import { getUser } from "../../storage/userStorage";
+import { stopRideRequestSound } from "../../../services/soundService";
+
+
+import {
+  startDriverMovement,
+  stopDriverMovement,
+} from "../../../src/services/simulation/driverMovementService";
 
 export default function RideStatus() {
-
+  const router = useRouter();
   const { rideId } = useLocalSearchParams();
 
   const [ride, setRide] = useState(null);
-
+  const [driverLocation, setDriverLocation] = useState(null);
+  const [passengerLocation, setPassengerLocation] = useState(null);
   const [driver, setDriver] = useState(null);
 
-  const [driverLocation, setDriverLocation] =
-    useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const [passengerLocation, setPassengerLocation] =
-    useState(null);
+  const movementRunningRef = useRef(false);
+  const movementStartedRef = useRef(false);
 
-  const [remainingDistance, setRemainingDistance] =
-    useState(null);
-
-  const [remainingDuration, setRemainingDuration] =
-    useState(null);
-
-  /*
-  ------------------------------------
-  Charger le conducteur connecté
-  ------------------------------------
-  */
+  // ============================================================
+  // ARRÊTER LA SONNERIE
+  // ============================================================
 
   useEffect(() => {
+    stopRideRequestSound();
 
-    async function loadDriver() {
+    console.log(
+      "🔇 Sonnerie arrêtée à l'ouverture de RideStatus"
+    );
 
-      const user = await getUser();
+    return () => {
+      stopRideRequestSound();
+    };
+  }, []);
 
-      if (!user) return;
+  // ============================================================
+  // RÉCUPÉRER LE CONDUCTEUR
+  // ============================================================
 
-      setDriver(user);
+  useEffect(() => {
+    let mounted = true;
 
-    }
+    const loadDriver = async () => {
+      try {
+        const currentDriver = await getUser();
+
+        if (!mounted) return;
+
+        if (!currentDriver?.userId) {
+          console.log("❌ Aucun conducteur connecté");
+          return;
+        }
+
+        console.log(
+          "🚗 Conducteur connecté :",
+          currentDriver
+        );
+
+        setDriver(currentDriver);
+
+        const latitude = Number(currentDriver.latitude);
+        const longitude = Number(currentDriver.longitude);
+
+        if (
+          Number.isFinite(latitude) &&
+          Number.isFinite(longitude)
+        ) {
+          setDriverLocation({
+            latitude,
+            longitude,
+          });
+        }
+      } catch (error) {
+        console.error(
+          "❌ Erreur récupération conducteur :",
+          error
+        );
+      }
+    };
 
     loadDriver();
 
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  /*
-  ------------------------------------
-  Ecoute de la course
-  ------------------------------------
-  */
+  // ============================================================
+  // ÉCOUTE DE LA COURSE
+  // ============================================================
 
   useEffect(() => {
+    if (!rideId) {
+      console.log("❌ rideId absent");
+      setLoading(false);
+      return;
+    }
 
-    if (!rideId) return;
+    console.log(
+      "👂 Écoute de la course :",
+      rideId
+    );
+
+    const rideRef = doc(
+      db,
+      "rides",
+      rideId
+    );
 
     const unsubscribe = onSnapshot(
-
-      doc(db, "rides", rideId),
-
+      rideRef,
       (snapshot) => {
+        if (!snapshot.exists()) {
+          console.log(
+            "❌ Course introuvable :",
+            rideId
+          );
 
-        if (!snapshot.exists()) return;
+          setRide(null);
+          setLoading(false);
+
+          return;
+        }
 
         const data = {
-
           id: snapshot.id,
-
           ...snapshot.data(),
-
         };
+
+        console.log(
+          "🚗 RIDE REÇUE DANS RIDESTATUS :",
+          data
+        );
 
         setRide(data);
 
-        if (data.pickup) {
+        // ======================================================
+        // POSITION DU PASSAGER
+        // ======================================================
 
+        if (
+          data.pickup &&
+          typeof data.pickup.latitude === "number" &&
+          typeof data.pickup.longitude === "number"
+        ) {
           setPassengerLocation({
-
             latitude: data.pickup.latitude,
-
             longitude: data.pickup.longitude,
-
-            address: data.pickup.address,
-
           });
-
         }
 
-      }
+        setLoading(false);
+      },
+      (error) => {
+        console.error(
+          "❌ Erreur écoute course :",
+          error
+        );
 
+        setLoading(false);
+      }
     );
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
 
+      console.log(
+        "🛑 Écoute de la course arrêtée :",
+        rideId
+      );
+    };
   }, [rideId]);
 
-  /*
-  ------------------------------------
-  Ecoute position conducteur
-  ------------------------------------
-  */
+  // ============================================================
+  // ÉCOUTE POSITION CONDUCTEUR
+  // ============================================================
 
   useEffect(() => {
-
     if (!driver?.userId) return;
 
+    console.log(
+      "📍 Écoute position conducteur :",
+      driver.userId
+    );
+
+    const driverRef = doc(
+      db,
+      "users",
+      driver.userId
+    );
+
     const unsubscribe = onSnapshot(
-
-      doc(db, "users", driver.userId),
-
+      driverRef,
       (snapshot) => {
-
         if (!snapshot.exists()) return;
 
         const data = snapshot.data();
 
-        setDriverLocation({
+        if (
+          typeof data.latitude !== "number" ||
+          typeof data.longitude !== "number"
+        ) {
+          return;
+        }
 
+        const location = {
           latitude: data.latitude,
-
           longitude: data.longitude,
+        };
 
-          vehicleType: data.vehicleType,
+        console.log(
+          "📍 Position conducteur :",
+          location
+        );
 
-        });
-
+        setDriverLocation(location);
+      },
+      (error) => {
+        console.error(
+          "❌ Erreur écoute position conducteur :",
+          error
+        );
       }
-
     );
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+    };
+  }, [driver?.userId]);
 
-  }, [driver]);
 
-  /*
-  ------------------------------------
-  Type de trajet
-  ------------------------------------
-  */
-
-  const tripType =
-
-    ride?.status === "started"
-
-      ? "destination"
-
-      : "pickup";
-
-  /*
-  ------------------------------------
-  Route Leaflet
-  ------------------------------------
-  */
-
-  const handleRouteInfo = (route) => {
-
-    setRemainingDistance(route.distance);
-
-    setRemainingDuration(route.duration);
-
-  };
-
-  /*
-  ------------------------------------
-  Téléphone
-  ------------------------------------
-  */
+  // ============================================================
+  // APPELER LE PASSAGER
+  // ============================================================
 
   const handleCallPassenger = async () => {
+    const phone = ride?.passengerPhone;
 
-    if (!ride?.passengerPhone) return;
-
-    await Linking.openURL(
-
-      `tel:${ride.passengerPhone}`
-
-    );
-
-  };
-
-  /*
-  ------------------------------------
-  Message
-  ------------------------------------
-  */
-
-  const handleMessagePassenger = () => {
-
-    Alert.alert(
-
-      "Message",
-
-      "Le chat sera ajouté dans la prochaine étape."
-
-    );
-
-  };
-
-  /*
-  ------------------------------------
-  Arrivé
-  ------------------------------------
-  */
-
-  const handleArrived = async () => {
-
-    await markDriverArrived(
-
-      ride.id
-
-    );
-
-  };
-
-// ===================================================
-// DÉMARRER LA COURSE
-// ===================================================
-
-const handleStartRide =
-  async () => {
-
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "🚗 BOUTON DÉMARRER LA COURSE"
-    );
-
-    console.log(
-      "========================================"
-    );
-
-    // ===============================================
-    // COURSE
-    // ===============================================
-
-    if (!ride?.id) {
-
+    if (!phone) {
       console.log(
-        "❌ Course introuvable."
+        "❌ Numéro du passager indisponible"
       );
-
-      return;
-    }
-
-    // ===============================================
-    // VÉRIFIER LE STATUT
-    // ===============================================
-
-    if (ride.status !== "arrived") {
-
-      console.log(
-        "❌ Impossible de démarrer."
-      );
-
-      console.log(
-        "📌 Statut actuel :",
-        ride.status
-      );
-
-      return;
-    }
-
-    // ===============================================
-    // VÉRIFIER LE CONDUCTEUR
-    // ===============================================
-
-    if (!ride.driverId) {
-
-      console.log(
-        "❌ Aucun conducteur accepté."
-      );
-
-      return;
-    }
-
-    // ===============================================
-    // EMPÊCHER DOUBLE LANCEMENT
-    // ===============================================
-
-    if (movementRunningRef.current) {
-
-      console.log(
-        "⏳ Un déplacement est déjà en cours."
-      );
-
       return;
     }
 
     try {
-
-      // =============================================
-      // 1. MARQUER LA COURSE COMME DÉMARRÉE
-      // =============================================
-
-      await updateDoc(
-        doc(
-          db,
-          "rides",
-          ride.id
-        ),
-        {
-          status:
-            "started",
-
-          startedAt:
-            serverTimestamp(),
-        }
-      );
-
       console.log(
-        "🚗 Course démarrée"
+        "📞 Appel du passager :",
+        phone
       );
 
-      // =============================================
-      // 2. LANCER LE DÉPLACEMENT
-      //    CONDUCTEUR → DESTINATION
-      // =============================================
-
-      console.log(
-        "🚗 Lancement du déplacement vers destination..."
+      await Linking.openURL(
+        `tel:${phone}`
       );
-
-      await handleMoveDriverToDestination();
-
-      console.log(
-        "✅ handleMoveDriverToDestination terminé."
-      );
-
     } catch (error) {
-
-      console.log(
-        "❌ Erreur démarrage course :",
+      console.error(
+        "❌ Impossible de lancer l'appel :",
         error
       );
-
-      movementRunningRef.current =
-        false;
     }
   };
+// ============================================================
+// TERMINER LA COURSE
+// ============================================================
 
-  /*
-  ------------------------------------
-  Terminer
-  ------------------------------------
-  */
+const handleFinishRide = async () => {
+  if (!ride?.id) return;
 
-  const handleFinishRide = async () => {
-
-    await finishRide({
-
-      rideId: ride.id,
-
-      driverId: driver.userId,
-
-    });
-
-    router.replace(
-
-      "/(driver)/dashboard"
-
+  if (ride.status !== "started") {
+    console.log(
+      "⚠️ Impossible de terminer : la course n'est pas en cours"
     );
-
-  };
-    if (
-    !ride ||
-    !driverLocation ||
-    !passengerLocation
-  ) {
-    return null;
+    return;
   }
 
+  if (actionLoading) return;
+
+  try {
+    setActionLoading(true);
+
+    console.log(
+      "🏁 Fin de la course :",
+      ride.id
+    );
+
+    // Arrêter tout déplacement éventuel
+    stopDriverMovement(driver?.userId);
+
+    // Marquer la course comme terminée
+    await updateDoc(
+      doc(db, "rides", ride.id),
+      {
+        status: "completed",
+        completedAt: serverTimestamp(),
+      }
+    );
+
+    console.log("✅ Course terminée");
+
+    // Retour au dashboard conducteur
+    router.replace("/(driver)/dashboard");
+
+  } catch (error) {
+    console.error(
+      "❌ Erreur fin de course :",
+      error
+    );
+  } finally {
+    setActionLoading(false);
+  }
+};
+  // ============================================================
+  // MESSAGE PASSAGER
+  // ============================================================
+
+  const handleMessagePassenger = () => {
+    if (!ride?.passengerId) {
+      console.log(
+        "❌ passengerId indisponible"
+      );
+      return;
+    }
+
+    console.log(
+      "💬 Ouverture du chat avec le passager :",
+      ride.passengerId
+    );
+
+    router.push({
+      pathname: "/(driver)/ChatScreen",
+      params: {
+        rideId: ride.id,
+        passengerId: ride.passengerId,
+        passengerName:
+          ride.passengerName || "Passager",
+      },
+    });
+  };
+
+// ============================================================
+// DÉMARRER LA COURSE
+// ============================================================
+
+const handleMainRideAction = async () => {
+  if (!ride?.id || !driver?.userId) return;
+  if (actionLoading) return;
+
+  try {
+    setActionLoading(true);
+
+    // ==========================================
+    // 1️⃣ CONDUCTEUR ASSIGNÉ
+    // → clic : aller vers le passager
+    // ==========================================
+    if (ride.status === "driver_assigned") {
+      console.log("🚗 Départ vers le passager");
+
+      const startLocation = {
+        latitude: Number(driver.latitude),
+        longitude: Number(driver.longitude),
+      };
+
+      const passengerLocation = {
+        latitude: Number(ride.pickup.latitude),
+        longitude: Number(ride.pickup.longitude),
+      };
+
+      await updateDoc(doc(db, "rides", ride.id), {
+        status: "driver_arriving",
+      });
+
+      startDriverMovement({
+        driverId: driver.userId,
+        startLocation,
+        endLocation: passengerLocation,
+
+        onFinished: async () => {
+          console.log("📍 CONDUCTEUR ARRIVÉ CHEZ LE PASSAGER");
+
+          await updateDoc(doc(db, "rides", ride.id), {
+            status: "driver_arrived",
+          });
+        },
+      });
+
+      return;
+    }
+
+    // ==========================================
+    // 2️⃣ CONDUCTEUR ARRIVÉ
+    // → clic : démarrer la course
+    // ==========================================
+    
+if (ride.status === "driver_arrived") {
+  console.log("▶️ Démarrage de la course");
+
+  // ==========================================================
+  // RÉCUPÉRER LA POSITION ACTUELLE DU CONDUCTEUR
+  // DIRECTEMENT DE FIRESTORE
+  // ==========================================================
+
+  const driverRef = doc(db, "users", driver.userId);
+
+  const driverSnapshot = await getDoc(driverRef);
+
+  if (!driverSnapshot.exists()) {
+    throw new Error("Conducteur introuvable dans Firestore");
+  }
+
+  const currentDriver = driverSnapshot.data();
+
+  const startLocation = {
+    latitude: Number(currentDriver.latitude),
+    longitude: Number(currentDriver.longitude),
+  };
+
+  console.log(
+    "📍 Position actuelle du conducteur pour démarrer la course :",
+    startLocation
+  );
+
+  // ==========================================================
+  // DESTINATION DU PASSAGER
+  // ==========================================================
+
+  const destinationLocation = {
+    latitude: Number(ride.destination.latitude),
+    longitude: Number(ride.destination.longitude),
+  };
+
+  console.log(
+    "🎯 Destination de la course :",
+    destinationLocation
+  );
+
+  // ==========================================================
+  // PASSAGE À "STARTED"
+  // ==========================================================
+
+  await updateDoc(doc(db, "rides", ride.id), {
+    status: "started",
+    startedAt: serverTimestamp(),
+  });
+
+  // ==========================================================
+  // DÉMARRER LE DÉPLACEMENT
+  // UNIQUEMENT APRÈS LE CLIC DU CONDUCTEUR
+  // ==========================================================
+
+  startDriverMovement({
+    driverId: driver.userId,
+    startLocation,
+    endLocation: destinationLocation,
+
+    onFinished: async () => {
+      console.log("📍 CONDUCTEUR ARRIVÉ À DESTINATION");
+
+      // ⚠️ NE PAS mettre status = completed ici.
+      // Le conducteur doit cliquer sur "Terminer la course".
+    },
+  });
+
+  return;
+}
+    // ==========================================
+    // 3️⃣ COURSE EN COURS
+    // → clic : terminer la course
+    // ==========================================
+    if (ride.status === "started") {
+      console.log("🏁 Fin de la course");
+
+      stopDriverMovement(driver.userId);
+
+      await updateDoc(doc(db, "rides", ride.id), {
+        status: "completed",
+        completedAt: serverTimestamp(),
+      });
+
+      console.log("✅ Course terminée");
+
+      router.replace("/(driver)/dashboard");
+
+      return;
+    }
+
+  } catch (error) {
+    console.error("❌ Erreur action course :", error);
+  } finally {
+    setActionLoading(false);
+  }
+};
+const handleCancelRide = async () => {
+  if (!ride?.id) return;
+
+  try {
+    console.log("❌ Annulation de la course :", ride.id);
+
+    stopDriverMovement();
+
+    await updateDoc(doc(db, "rides", ride.id), {
+      status: "cancelled",
+      cancelledAt: serverTimestamp(),
+    });
+
+    console.log("✅ Course annulée");
+
+    router.back();
+  } catch (error) {
+    console.error("❌ Erreur annulation course :", error);
+  }
+};
+
+  // ============================================================
+// TEXTE DU STATUT
+// ============================================================
+
+let statusText = "";
+
+if (ride?.status === "driver_arrived") {
+  statusText = "Vous êtes arrivé chez le passager";
+}
+
+  // ============================================================
+  // TEXTE BOUTON
+  // ============================================================
+
+  let actionText = "";
+
+  if (ride?.status === "driver_arrived") {
+    actionText =
+      "Démarrer la course";
+  }
+
+  // ============================================================
+  // CHARGEMENT
+  // ============================================================
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        
+
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>
+            Chargement de la course...
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ============================================================
+  // COURSE INTROUVABLE
+  // ============================================================
+
+  if (!ride) {
+    return (
+      <View style={styles.container}>
+      
+
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>
+            Course introuvable
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ============================================================
+  // AFFICHAGE
+  // ============================================================
+
   return (
-    <SafeAreaView style={styles.container}>
+  <View style={styles.container}>
 
-      <AppHeader
-        title="Course en cours"
-        profileRoute="/(driver)/profile"
-      />
+    {/* ======================================================
+        CARTE PLEIN ÉCRAN
+    ====================================================== */}
 
-      <DriverStatusBadge
-        ride={ride}
-        distance={remainingDistance}
-      />
+    <View style={styles.fullScreenMap}>
 
-      <View style={styles.mapContainer}>
+      {driverLocation && passengerLocation ? (
         <DriverRideMap
           driverLocation={driverLocation}
           passengerLocation={passengerLocation}
-          destinationLocation={ride.destination}
-          tripType={tripType}
-          onRouteInfo={handleRouteInfo}
-        />
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-      >
-
-        <DriverRideInfoCard
-          ride={ride}
-          distance={remainingDistance}
-          duration={remainingDuration}
-        />
-
-        <DriverActionButtons
-          ride={ride}
-          distance={remainingDistance}
-          onCallPassenger={handleCallPassenger}
-          onMessagePassenger={
-            handleMessagePassenger
+          destinationLocation={
+            ride.destination ?? null
           }
-          onArrived={handleArrived}
-          onStartRide={handleStartRide}
-          onFinishRide={handleFinishRide}
+          ride={ride}
         />
+      ) : (
+        <View style={styles.mapLoading}>
+          <Text style={styles.mapLoadingText}>
+            Chargement de la carte...
+          </Text>
+        </View>
+      )}
 
-      </ScrollView>
+    </View>
 
-    </SafeAreaView>
-  );
+    
+   
+    {/* ======================================================
+        STATUT AU-DESSUS DE LA CARTE
+    ====================================================== */}
+
+   {statusText !== "" && (
+  <View style={styles.statusBar}>
+    <View style={styles.statusDot} />
+
+    <Text style={styles.statusText}>
+      {statusText}
+    </Text>
+  </View>
+)}
+
+ 
+    {/* ======================================================
+        APPEL / MESSAGE
+    ====================================================== */}
+
+  {ride.status !== "started" &&
+ ride.status !== "completed" &&
+ ride.status !== "cancelled" && (
+  <View style={styles.contactButtons}>
+
+    <Pressable
+      style={({ pressed }) => [
+        styles.contactButton,
+        pressed && styles.buttonPressed,
+      ]}
+      onPress={handleCallPassenger}
+    >
+      <Text style={styles.contactIcon}>
+        📞
+      </Text>
+    </Pressable>
+
+    <Pressable
+      style={({ pressed }) => [
+        styles.contactButton,
+        pressed && styles.buttonPressed,
+      ]}
+      onPress={handleMessagePassenger}
+    >
+      <Text style={styles.contactIcon}>
+        💬
+      </Text>
+    </Pressable>
+
+  </View>
+)}
+
+{/* ======================================================
+    BOUTONS DU BAS
+====================================================== */}
+
+{ride.status !== "cancelled" &&
+ ride.status !== "completed" && (
+  <View style={styles.bottomButtons}>
+
+    {/* Bouton principal : même bouton, texte/action selon le statut */}
+    <Pressable
+      style={({ pressed }) => [
+        styles.mainButton,
+        ride.status === "driver_arriving" && styles.disabledButton,
+        pressed && styles.buttonPressed,
+      ]}
+      onPress={handleMainRideAction}
+      disabled={
+        actionLoading ||
+        ride.status === "driver_arriving"
+      }
+    >
+      <Text style={styles.mainButtonText}>
+        {ride.status === "driver_assigned" &&
+          "Aller vers le passager"}
+
+        {ride.status === "driver_arriving" &&
+          "En route vers le passager..."}
+
+        {ride.status === "driver_arrived" &&
+          "Démarrer la course"}
+
+        {ride.status === "started" &&
+          "Terminer la course"}
+      </Text>
+    </Pressable>
+
+  </View>
+)}
+
+  </View>
+);
 }
 
-const styles = StyleSheet.create({
+// ================================================================
+// CALCUL DISTANCE
+// ================================================================
 
+function calculateDistance(
+  lat1,
+  lon1,
+  lat2,
+  lon2
+) {
+  const R = 6371000;
+
+  const dLat =
+    ((lat2 - lat1) * Math.PI) /
+    180;
+
+  const dLon =
+    ((lon2 - lon1) * Math.PI) /
+    180;
+
+  const a =
+    Math.sin(dLat / 2) *
+      Math.sin(dLat / 2) +
+    Math.cos(
+      (lat1 * Math.PI) / 180
+    ) *
+      Math.cos(
+        (lat2 * Math.PI) / 180
+      ) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
+
+  return R * c;
+}
+
+// ================================================================
+// STYLES
+// ================================================================
+
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7F7F7",
+    backgroundColor: "#F5F5F5",
   },
 
-  mapContainer: {
-    height: 330,
-    marginHorizontal: 15,
-    marginTop: 15,
-    borderRadius: 22,
-    overflow: "hidden",
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  loadingText: {
+    fontSize: 16,
+    color: "#777",
+  },
+
+  errorText: {
+    fontSize: 17,
+    color: "#D32F2F",
+    fontWeight: "600",
+  },
+
+ statusBar: {
+  position: "absolute",
+  top: 95,
+  left: 16,
+  right: 16,
+
+  height: 44,
+  borderRadius: 14,
+
+  backgroundColor: "#FFF8DD",
+
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+
+  zIndex: 20,
+  elevation: 20,
+},
+
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#F2B600",
+    marginRight: 8,
+  },
+
+  statusText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#E3A800",
+  },
+fullScreenMap: {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "#EDEDED",
+},
+
+  mapLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#EDEDED",
+  },
+
+  mapLoadingText: {
+    color: "#777",
+    fontSize: 15,
+  },
+
+  passengerMiniCard: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    bottom: 145,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
     elevation: 8,
-    backgroundColor: "#FFF",
   },
 
+  passengerAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#E8F5EF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+
+  passengerAvatarText: {
+    fontSize: 21,
+  },
+
+  passengerNameContainer: {
+    flex: 1,
+  },
+
+  passengerLabel: {
+    fontSize: 11,
+    color: "#888",
+  },
+
+  passengerName: {
+    marginTop: 2,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#222",
+  },
+
+ bottomButtons: {
+  position: "absolute",
+  left: 16,
+  right: 16,
+  bottom: 20,
+
+  flexDirection: "row",
+  gap: 10,
+
+  zIndex: 30,
+  elevation: 30,
+},
+
+cancelButton: {
+  flex: 1,
+
+  height: 58,
+
+  borderRadius: 18,
+
+  backgroundColor: "#FFFFFF",
+
+  borderWidth: 2,
+  borderColor: "#E53935",
+
+  justifyContent: "center",
+  alignItems: "center",
+
+  elevation: 8,
+},
+
+cancelButtonText: {
+  color: "#E53935",
+
+  fontSize: 14,
+
+  fontWeight: "800",
+
+  textAlign: "center",
+},
+
+arrivingButton: {
+  flex: 1,
+
+  height: 58,
+
+  borderRadius: 18,
+
+  backgroundColor: "#087F5B",
+
+  justifyContent: "center",
+  alignItems: "center",
+
+  elevation: 8,
+},
+
+mainButton: {
+  flex: 1,
+
+  height: 58,
+
+  borderRadius: 18,
+
+  backgroundColor: "#087F5B",
+
+  justifyContent: "center",
+  alignItems: "center",
+
+  elevation: 8,
+},
+
+mainButtonText: {
+  color: "#FFFFFF",
+
+  fontSize: 14,
+
+  fontWeight: "800",
+
+  textAlign: "center",
+},
+
+disabledButton: {
+  opacity: 0.55,
+},
+
+buttonPressed: {
+  opacity: 0.72,
+},
+
+contactButtons: {
+  position: "absolute",
+
+  right: 18,
+  bottom: 105,
+
+  flexDirection: "column",
+
+  gap: 12,
+
+  zIndex: 30,
+  elevation: 30,
+},
+
+contactButton: {
+  width: 58,
+  height: 58,
+
+  borderRadius: 29,
+
+  backgroundColor: "#FFFFFF",
+
+  justifyContent: "center",
+  alignItems: "center",
+
+  elevation: 8,
+},
+
+contactIcon: {
+  fontSize: 23,
+},
 });

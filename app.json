@@ -57,7 +57,9 @@
           "locationWhenInUsePermission": "N'Taakata utilise votre position pour trouver les conducteurs à proximité."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-audio",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

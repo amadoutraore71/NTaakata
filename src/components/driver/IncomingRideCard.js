@@ -15,138 +15,145 @@ export default function IncomingRideCard({
   onAccept,
   onReject,
 }) {
-  if (!request) return null;
+  console.log("🟡 IncomingRideCard :", {
+    visible,
+    requestId: request?.requestId,
+    rideId: request?.id,
+    passengerName: request?.passengerName,
+    countdown,
+  });
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-    >
-      <View style={styles.overlay}>
+  if (!request) {
+    console.log("❌ IncomingRideCard : request est null");
+    return null;
+  }
 
-        <View style={styles.card}>
+return (
+  visible && (
+    <View style={styles.overlay}>
 
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>
-              🚖 NOUVELLE DEMANDE
+      <View style={styles.card}>
+
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>
+            🚖 NOUVELLE DEMANDE
+          </Text>
+        </View>
+
+        <ProgressBar countdown={countdown} />
+
+        <Text style={styles.title}>
+          👤 {request.passengerName}
+        </Text>
+
+        <Text style={styles.text}>
+          📞 {request.passengerPhone}
+        </Text>
+
+        <Text style={styles.label}>
+          📍 Départ
+        </Text>
+
+        <Text style={styles.value}>
+          {request.pickup?.address ?? "Position actuelle"}
+        </Text>
+
+        <Text style={styles.label}>
+          🎯 Destination
+        </Text>
+
+        <Text style={styles.value}>
+          {request.destination?.address ?? "Destination"}
+        </Text>
+
+        <View style={styles.infoRow}>
+
+          <View style={styles.infoBox}>
+            <Text style={styles.infoLabel}>
+              Distance
+            </Text>
+
+            <Text style={styles.infoValue}>
+              {request.estimatedDistance}
             </Text>
           </View>
 
-          <ProgressBar countdown={countdown} />
-
-          <Text style={styles.title}>
-            👤 {request.passengerName}
-          </Text>
-
-          <Text style={styles.text}>
-            📞 {request.passengerPhone}
-          </Text>
-
-          <Text style={styles.label}>
-            📍 Départ
-          </Text>
-
-          <Text style={styles.value}>
-            {request.pickup?.address ??
-              "Position actuelle"}
-          </Text>
-
-          <Text style={styles.label}>
-            🎯 Destination
-          </Text>
-
-          <Text style={styles.value}>
-            {request.destination?.address ??
-              "Destination"}
-          </Text>
-
-          <View style={styles.infoRow}>
-
-            <View style={styles.infoBox}>
-
-              <Text style={styles.infoLabel}>
-                Distance
-              </Text>
-
-              <Text style={styles.infoValue}>
-                {request.estimatedDistance}
-              </Text>
-
-            </View>
-
-            <View style={styles.infoBox}>
-
-              <Text style={styles.infoLabel}>
-                Durée
-              </Text>
-
-              <Text style={styles.infoValue}>
-                {request.estimatedDuration}
-              </Text>
-
-            </View>
-
-          </View>
-
-          <View style={styles.priceCard}>
-
-            <Text style={styles.priceLabel}>
-              Prix estimé
+          <View style={styles.infoBox}>
+            <Text style={styles.infoLabel}>
+              Durée
             </Text>
 
-            <Text style={styles.price}>
-              {request.estimatedPrice} FCFA
+            <Text style={styles.infoValue}>
+              {request.estimatedDuration}
             </Text>
-
           </View>
 
-          <View style={styles.buttonRow}>
+        </View>
 
-            <TouchableOpacity
-              style={styles.rejectButton}
-              onPress={onReject}
-            >
-              <Text style={styles.buttonText}>
-                Refuser
-              </Text>
-            </TouchableOpacity>
+        <View style={styles.priceCard}>
 
-            <TouchableOpacity
-              style={styles.acceptButton}
-              onPress={onAccept}
-            >
-              <Text style={styles.buttonText}>
-                Accepter
-              </Text>
-            </TouchableOpacity>
+          <Text style={styles.priceLabel}>
+            Prix estimé
+          </Text>
 
-          </View>
+          <Text style={styles.price}>
+            {request.estimatedPrice} FCFA
+          </Text>
+
+        </View>
+
+        <View style={styles.buttonRow}>
+
+          <TouchableOpacity
+            style={styles.rejectButton}
+            onPress={onReject}
+          >
+            <Text style={styles.buttonText}>
+              Refuser
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.acceptButton}
+            onPress={onAccept}
+          >
+            <Text style={styles.buttonText}>
+              Accepter
+            </Text>
+          </TouchableOpacity>
 
         </View>
 
       </View>
 
-    </Modal>
-  );
+    </View>
+  )
+);
 }
 
 const styles = StyleSheet.create({
 
   overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(0,0,0,0.45)",
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 9999,
+  elevation: 9999,
+},
 
-  card: {
-    width: "90%",
-    backgroundColor: "#FFF",
-    borderRadius: 24,
-    padding: 24,
-    elevation: 20,
-  },
+card: {
+  width: "90%",
+  maxHeight: "88%",
+  backgroundColor: "#FFF",
+  borderRadius: 24,
+  padding: 18,
+  elevation: 20,
+},
 
   badge: {
     alignSelf: "center",

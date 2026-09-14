@@ -300,13 +300,20 @@ function createRouteSteps(
     );
   }
 
-  if (
-    totalDistance <= 0
-  ) {
-    throw new Error(
-      "La distance de la route est nulle"
-    );
-  }
+  if (totalDistance <= 0) {
+  console.log("📍 Distance de la route : 0 m");
+  console.log("📍 Conducteur déjà au point d'arrivée");
+
+  return {
+    steps: [
+      {
+        latitude: points[0].latitude,
+        longitude: points[0].longitude,
+      },
+    ],
+    totalDistance: 0,
+  };
+}
 
   // ====================================================
   // 3. CRÉATION DES ÉTAPES
@@ -681,57 +688,95 @@ export async function startDriverMovement({
       throw error;
     }
 
-    // ==================================================
-    // ARRIVÉE
-    // ==================================================
+   // ==================================================
+// ARRIVÉE
+// ==================================================
 
-    if (
-      step ===
-      routeSteps.length - 1
-    ) {
-      // ------------------------------------------------
-      // VÉRIFIER AVANT onFinished
-      // ------------------------------------------------
+if (
+  step ===
+  routeSteps.length - 1
+) {
+  // ------------------------------------------------
+  // VÉRIFIER AVANT L'ARRIVÉE
+  // ------------------------------------------------
 
-      if (!isMovementActive()) {
-        console.log(
-          "🛑 Déplacement remplacé juste avant l'arrivée.",
-        );
+  if (!isMovementActive()) {
+    console.log(
+      "🛑 Déplacement remplacé juste avant l'arrivée."
+    );
 
-        return;
+    return;
+  }
+
+  // ------------------------------------------------
+  // FORCER LA POSITION EXACTE D'ARRIVÉE
+  // ------------------------------------------------
+
+  try {
+    await updateDoc(driverRef, {
+      latitude: endLocation.latitude,
+      longitude: endLocation.longitude,
+      lastLocationUpdate: new Date(),
+    });
+
+    console.log(
+      "========================================"
+    );
+
+    console.log(
+      "📍 CONDUCTEUR ARRIVÉ"
+    );
+
+    console.log(
+      "📍 Position finale exacte :",
+      endLocation
+    );
+
+    console.log(
+      "🔥 Firestore position finale :",
+      {
+        latitude: endLocation.latitude,
+        longitude: endLocation.longitude,
       }
+    );
 
-      console.log(
-        "========================================",
-      );
+    console.log(
+      "========================================"
+    );
 
-      console.log(
-        "📍 CONDUCTEUR ARRIVÉ",
-      );
+  } catch (error) {
 
-      console.log(
-        "📍 Position finale :",
-        position,
-      );
-
-      console.log(
-        "========================================",
-      );
-
-      // Le mouvement est terminé.
+    if (isMovementActive()) {
       activeMovements.delete(
-        String(driverId),
+        String(driverId)
       );
-
-      if (
-        typeof onFinished ===
-        "function"
-      ) {
-        await onFinished();
-      }
-
-      return;
     }
+
+    console.error(
+      "❌ Erreur position finale conducteur :",
+      error
+    );
+
+    throw error;
+  }
+
+  // ------------------------------------------------
+  // TERMINER LE DÉPLACEMENT
+  // ------------------------------------------------
+
+  activeMovements.delete(
+    String(driverId)
+  );
+
+  if (
+    typeof onFinished ===
+    "function"
+  ) {
+    await onFinished();
+  }
+
+  return;
+}
 
     // ==================================================
     // ATTENTE AVANT LA PROCHAINE POSITION

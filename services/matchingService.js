@@ -7,10 +7,16 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase/config";
+
 import { findAvailableDrivers } from "./matching/driverSelectionService";
+
 import {
   startRideSearchTimer,
 } from "./rideRequestManager";
+
+import {
+  isSubscriptionValid,
+} from "./subscriptionService";
 
 // ======================================================
 // ENVOYER LA COURSE À TOUS LES CONDUCTEURS DISPONIBLES
@@ -25,19 +31,93 @@ export async function sendRideRequestToAllDrivers({
   console.log("======================================");
   console.log("📢 BROADCAST MATCHING");
   console.log("🚕 Ride ID :", rideId);
-  console.log("👥 Conducteurs :", drivers.length);
+  console.log(
+    "👥 Conducteurs trouvés :",
+    drivers?.length ?? 0
+  );
   console.log("======================================");
 
   try {
 
     // ==================================================
-    // Vérification
+    // VÉRIFICATION
     // ==================================================
 
     if (!drivers || !drivers.length) {
 
       console.log(
-        "❌ Aucun conducteur à contacter"
+        "❌ Aucun conducteur trouvé"
+      );
+
+      return [];
+
+    }
+
+    // ==================================================
+    // FILTRER LES CONDUCTEURS ABONNÉS
+    // ==================================================
+
+    const eligibleDrivers =
+      drivers.filter((driver) => {
+
+        const subscriptionActive =
+          driver.subscriptionActive === true;
+
+        const subscriptionValid =
+          isSubscriptionValid(
+            driver.subscriptionExpiresAt
+          );
+
+        console.log(
+          "🔎 Vérification abonnement :",
+          driver.name,
+          "| active :",
+          subscriptionActive,
+          "| expiration :",
+          driver.subscriptionExpiresAt,
+          "| valide :",
+          subscriptionValid
+        );
+
+        // Le conducteur doit avoir :
+        // 1. subscriptionActive = true
+        // 2. une date d'expiration valide
+
+        return (
+          subscriptionActive &&
+          subscriptionValid
+        );
+
+      });
+
+    // ==================================================
+    // INFORMATIONS
+    // ==================================================
+
+    console.log(
+      "👥 Conducteurs trouvés :",
+      drivers.length
+    );
+
+    console.log(
+      "✅ Conducteurs abonnés :",
+      eligibleDrivers.length
+    );
+
+    console.log(
+      "🚫 Conducteurs exclus :",
+      drivers.length -
+        eligibleDrivers.length
+    );
+
+    // ==================================================
+    // SI AUCUN CONDUCTEUR ABONNÉ
+    // ==================================================
+
+    if (!eligibleDrivers.length) {
+
+      console.log(
+        "❌ Aucun conducteur avec abonnement valide"
       );
 
       return [];
@@ -52,15 +132,16 @@ export async function sendRideRequestToAllDrivers({
 
     const contactedDrivers = [];
 
-    const driverIds = drivers.map(
-      (driver) => driver.id
-    );
+    const driverIds =
+      eligibleDrivers.map(
+        (driver) => driver.id
+      );
 
     // ==================================================
     // CRÉER UNE DEMANDE POUR CHAQUE CONDUCTEUR
     // ==================================================
 
-    for (const driver of drivers) {
+    for (const driver of eligibleDrivers) {
 
       console.log(
         "📤 Création demande pour :",
@@ -172,7 +253,7 @@ export async function sendRideRequestToAllDrivers({
               "broadcast",
 
             // ==============================
-            // TOUS LES CONDUCTEURS CONTACTÉS
+            // CONDUCTEURS CONTACTÉS
             // ==============================
 
             attemptedDrivers:
@@ -315,7 +396,7 @@ export async function sendRideRequestToAllDrivers({
     );
 
     console.log(
-      "👥 Conducteurs contactés :",
+      "👥 Conducteurs abonnés contactés :",
       contactedDrivers.length
     );
 
@@ -333,7 +414,7 @@ export async function sendRideRequestToAllDrivers({
     );
 
     // ==================================================
-    // DÉMARRER LE TIMER GLOBAL DE LA COURSE
+    // DÉMARRER LE TIMER GLOBAL
     // ==================================================
 
     if (requestIds.length > 0) {
@@ -368,9 +449,7 @@ export async function sendRideRequestToAllDrivers({
 // ANCIENNE FONCTION
 // ======================================================
 //
-// On la conserve pour éviter de casser d'autres fichiers
-// qui utilisent encore sendRideRequest().
-//
+// On la conserve pour éviter de casser les autres fichiers.
 // Elle utilise maintenant le broadcast.
 // ======================================================
 

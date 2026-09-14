@@ -1,4 +1,7 @@
-import { router } from "expo-router";
+import {
+    router,
+    useFocusEffect,
+} from "expo-router";
 import {
     collection,
     doc,
@@ -9,8 +12,12 @@ import {
     updateDoc,
     where
 } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import React, {
+    useEffect,
+    useState,
+} from "react";
 import {
+    ScrollView,
     StyleSheet,
     Switch,
     Text,
@@ -22,16 +29,22 @@ import { db } from "../../../firebase/config";
 import {
     acceptRideRequest,
     rejectRideRequest,
+    timeoutRideRequest,
 } from "../../../services/matching/rideRequestService";
 import {
     playRideRequestSound,
     stopRideRequestSound,
 } from "../../../services/soundService";
+import { isSubscriptionValid } from "../../../services/subscriptionService";
 import AppHeader from "../../components/AppHeader";
+import DebugRideRequest from "../../components/driver/DebugRideRequest";
 import IncomingRideCard from "../../components/driver/IncomingRideCard";
-import { getUser } from "../../storage/userStorage";
-import { isSubscriptionValid } from "../../utils/subscriptionChecker";
+import {
+    getUser,
+    saveUser,
+} from "../../storage/userStorage";
 import DriverLocation from "./driver-location";
+
 export default function DriverDashboard() {
   const [subscriptionActive, setSubscriptionActive] =
     useState(false);
@@ -47,126 +60,234 @@ export default function DriverDashboard() {
 
   const [totalRatings, setTotalRatings] =
     useState(0);
-  const [countdown, setCountdown] = useState(20);
+  const [countdown, setCountdown] = useState(60);
   const [totalRides, setTotalRides] = useState(0);
   const [incomingRide, setIncomingRide] = useState(null);
-  useEffect(() => {
+  useFocusEffect(
+  React.useCallback(() => {
 
-    let unsubscribeRide;
-
-    const init = async () => {
-
-      const driver = await getUser();
-
-      if (!driver?.userId) {
-
-        setLoading(false);
-        return;
-
-      }
-
-      await Promise.all([
-        checkSubscription(driver),
-        loadStats(driver),
-      ]);
-
-      unsubscribeRide =
-        listenIncomingRide(driver.userId);
-
-      setLoading(false);
-
-    };
-
-    init();
-
-    return () => {
-
-      if (unsubscribeRide) {
-        unsubscribeRide();
-      }
-
-    };
-
-  }, []);
-  useEffect(() => {
-    if (!incomingRide) return;
-    playRideRequestSound();
-    setCountdown(20);
-
-    const timer = setInterval(() => {
-      setCountdown((value) => value - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-
-  }, [incomingRide]);
-  useEffect(() => {
-    if (!incomingRide) return;
-
-    if (countdown !== 0) return;
-
-    rejectRide();
-
-  }, [countdown, incomingRide]);
-  const listenIncomingRide = (userId) => {
-
-    const q = query(
-      collection(db, "ride_requests"),
-      where("driverId", "==", userId),
-      where("status", "==", "pending")
+  const refreshDashboard = async () => {
+  try {
+    console.log(
+      "🔄 Actualisation du dashboard conducteur..."
     );
-    return onSnapshot(q, async (snapshot) => {
 
-      if (snapshot.empty) {
-        setIncomingRide(null);
-        return;
-      }
+    const driver = await getUser();
 
-      const request = snapshot.docs[0];
+    console.log(
+      "🚗 Conducteur récupéré :",
+      driver
+    );
 
-      setIncomingRide({
-        id: request.data().rideId,
-        requestId: request.id,
-        ...request.data(),
-      });
+    if (!driver?.userId) {
+      console.log(
+        "❌ Conducteur connecté introuvable"
+      );
+      return;
+    }
 
+    await Promise.all([
+      checkSubscription(driver),
+      loadStats(driver),
+    ]);
 
-    });
+    console.log(
+      "✅ Dashboard conducteur chargé"
+    );
+
+  } catch (error) {
+    console.error(
+      "❌ Erreur actualisation Dashboard :",
+      error
+    );
+
+  } finally {
+    setLoading(false);
   }
-  const initDashboard = async () => {
+};
+
+    refreshDashboard();
+
+  }, [])
+);
+
+ useEffect(() => {
+
+  let unsubscribeRide = null;
+
+  const startRideListener = async () => {
 
     try {
 
       const driver = await getUser();
 
       if (!driver?.userId) {
-
-        setLoading(false);
-
         return;
-
       }
 
-      await Promise.all([
+      console.log(
+        "🎧 Écoute des demandes conducteur démarrée :",
+        driver.userId
+      );
 
-        checkSubscription(driver),
-
-        loadStats(driver),
-
-      ]);
+      unsubscribeRide =
+        listenIncomingRide(driver.userId);
 
     } catch (error) {
 
-      console.log(error);
-
-    } finally {
-
-      setLoading(false);
+      console.error(
+        "❌ Erreur écoute demandes conducteur :",
+        error
+      );
 
     }
 
   };
+
+  startRideListener();
+
+  return () => {
+
+    if (unsubscribeRide) {
+      unsubscribeRide();
+
+      console.log(
+        "🛑 Écoute des demandes conducteur arrêtée"
+      );
+    }
+
+  };
+
+}, []);
+ useEffect(() => {
+  if (!incomingRide) {
+    stopRideRequestSound();
+    return;
+  }
+
+  // Nouvelle demande
+  playRideRequestSound();
+
+  setCountdown(60);
+
+  const timer = setInterval(() => {
+    setCountdown((value) => {
+      if (value <= 1) {
+        clearInterval(timer);
+        return 0;
+      }
+
+      return value - 1;
+    });
+  }, 1000);
+
+  return () => {
+    clearInterval(timer);
+  };
+}, [incomingRide]);
+  useEffect(() => {
+  if (!incomingRide) return;
+
+  if (countdown !== 0) return;
+
+  const expireRequest = async () => {
+    try {
+
+      await stopRideRequestSound();
+
+      await timeoutRideRequest(
+        incomingRide.requestId
+      );
+
+      setIncomingRide(null);
+
+      console.log(
+        "⏰ Demande expirée après 60 secondes :",
+        incomingRide.requestId
+      );
+
+    } catch (error) {
+
+      console.error(
+        "❌ Erreur expiration demande :",
+        error
+      );
+
+      setIncomingRide(null);
+    }
+  };
+
+  expireRequest();
+
+}, [countdown, incomingRide]);
+ const listenIncomingRide = (userId) => {
+
+  const q = query(
+    collection(db, "ride_requests"),
+    where("driverId", "==", userId),
+    where("status", "==", "pending")
+  );
+
+  return onSnapshot(q, async (snapshot) => {
+
+    // ==========================================
+    // AUCUNE DEMANDE
+    // ==========================================
+
+    if (snapshot.empty) {
+
+      console.log("📭 Aucune demande conducteur");
+
+      await stopRideRequestSound();
+
+      setIncomingRide(null);
+
+      return;
+    }
+
+    // ==========================================
+    // DEMANDE REÇUE
+    // ==========================================
+
+    const request = snapshot.docs[0];
+
+    console.log("📩 DEMANDE REÇUE :", {
+      requestId: request.id,
+      rideId: request.data().rideId,
+      status: request.data().status,
+    });
+
+    // ==========================================
+    // STOCKER LA DEMANDE
+    // ==========================================
+
+    setIncomingRide({
+      id: request.data().rideId,
+      requestId: request.id,
+      ...request.data(),
+    });
+
+  });
+};
   const checkSubscription = async (driver) => {
+  try {
+    if (!driver?.userId) {
+      console.log(
+        "❌ Impossible de vérifier l'abonnement : userId manquant"
+      );
+
+      setSubscriptionActive(false);
+      return;
+    }
+
+    console.log(
+      "🔎 Vérification abonnement Firestore :",
+      driver.userId
+    );
+
+    // ============================================================
+    // FIRESTORE = SOURCE DE VÉRITÉ
+    // ============================================================
 
     const driverRef = doc(
       db,
@@ -174,34 +295,69 @@ export default function DriverDashboard() {
       driver.userId
     );
 
-    const snapshot =
-      await getDoc(driverRef);
+    const snapshot = await getDoc(driverRef);
 
-    if (!snapshot.exists()) return;
+    if (!snapshot.exists()) {
+      console.log(
+        "❌ Conducteur introuvable dans Firestore"
+      );
+
+      setSubscriptionActive(false);
+      return;
+    }
 
     const data = snapshot.data();
+// ============================================================
+// SYNCHRONISER FIRESTORE → STOCKAGE LOCAL
+// ============================================================
 
-    setAverageRating(
-      data.averageRating || 0
+await saveUser({
+  ...driver,
+  ...data,
+});
+
+console.log(
+  "💾 Utilisateur local synchronisé avec Firestore"
+);
+    console.log(
+      "🔥 Données abonnement Firestore :",
+      {
+        userId: data.userId,
+        subscriptionActive:
+          data.subscriptionActive,
+        subscriptionExpiresAt:
+          data.subscriptionExpiresAt,
+        subscriptionPaidAt:
+          data.subscriptionPaidAt,
+      }
     );
 
-    setTotalRatings(
-      data.totalRatings || 0
-    );
-
-    setIsOnline(
-      data.isOnline || false
-    );
+    // ============================================================
+    // VÉRIFIER L'EXPIRATION
+    // ============================================================
 
     const valid =
+      data.subscriptionActive === true &&
       isSubscriptionValid(
         data.subscriptionExpiresAt
       );
 
+    console.log(
+      "📅 Abonnement valide :",
+      valid
+    );
+
+    // ============================================================
+    // SI EXPIRÉ → DÉSACTIVER
+    // ============================================================
+
     if (
       !valid &&
-      data.subscriptionActive
+      data.subscriptionActive === true
     ) {
+      console.log(
+        "⛔ Abonnement expiré → désactivation"
+      );
 
       await updateDoc(
         driverRef,
@@ -209,12 +365,43 @@ export default function DriverDashboard() {
           subscriptionActive: false,
         }
       );
-
     }
+
+    // ============================================================
+    // METTRE À JOUR L'ÉTAT DE L'ÉCRAN
+    // ============================================================
 
     setSubscriptionActive(valid);
 
-  };
+    // ============================================================
+    // RÉCUPÉRER LES AUTRES DONNÉES CONDUCTEUR
+    // ============================================================
+
+   setAverageRating(
+  typeof data.rating === "number"
+    ? data.rating
+    : 0
+);
+
+setTotalRatings(
+  typeof data.ratingCount === "number"
+    ? data.ratingCount
+    : 0
+);
+
+    setIsOnline(
+      data.isOnline === true
+    );
+
+  } catch (error) {
+    console.error(
+      "❌ Erreur vérification abonnement :",
+      error
+    );
+
+    setSubscriptionActive(false);
+  }
+};
   const loadStats = async (driver) => {
 
     const q = query(
@@ -345,10 +532,16 @@ export default function DriverDashboard() {
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
+return (
+  <SafeAreaView style={styles.container}>
 
-      <DriverLocation />
+    <DriverLocation />
+
+    <ScrollView
+      style={styles.scrollView}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
 
       <AppHeader
         title="Tableau de bord"
@@ -370,9 +563,7 @@ export default function DriverDashboard() {
           <TouchableOpacity
             style={styles.activateButton}
             onPress={() =>
-              router.push(
-                "/(driver)/subscription"
-              )
+              router.push("/(driver)/subscription")
             }
           >
             <Text style={styles.activateText}>
@@ -382,6 +573,7 @@ export default function DriverDashboard() {
         </View>
       )}
 
+      {/* STATUT CONDUCTEUR */}
       <View style={styles.statusCard}>
         <Text style={styles.statusTitle}>
           Statut Chauffeur
@@ -396,16 +588,13 @@ export default function DriverDashboard() {
 
           <Switch
             value={isOnline}
-            onValueChange={
-              toggleOnlineStatus
-            }
-            disabled={
-              !subscriptionActive
-            }
+            onValueChange={toggleOnlineStatus}
+            disabled={!subscriptionActive}
           />
         </View>
       </View>
 
+      {/* REVENUS */}
       <View style={styles.card}>
         <Text style={styles.label}>
           Revenus aujourd'hui
@@ -416,6 +605,7 @@ export default function DriverDashboard() {
         </Text>
       </View>
 
+      {/* COURSES */}
       <View style={styles.card}>
         <Text style={styles.label}>
           Courses effectuées
@@ -425,6 +615,8 @@ export default function DriverDashboard() {
           {totalRides}
         </Text>
       </View>
+
+      {/* NOTE */}
       <View style={styles.card}>
         <Text style={styles.label}>
           Note du conducteur
@@ -444,19 +636,16 @@ export default function DriverDashboard() {
         </Text>
       </View>
 
+      {/* DEMANDES */}
       <TouchableOpacity
         style={styles.button}
         onPress={() => {
           if (!subscriptionActive) {
-            router.push(
-              "/(driver)/subscription"
-            );
+            router.push("/(driver)/subscription");
             return;
           }
 
-          router.push(
-            "/(driver)/requests"
-          );
+          router.push("/(driver)/requests");
         }}
       >
         <Text style={styles.buttonText}>
@@ -464,12 +653,11 @@ export default function DriverDashboard() {
         </Text>
       </TouchableOpacity>
 
+      {/* REVENUS */}
       <TouchableOpacity
         style={styles.secondaryButton}
         onPress={() =>
-          router.push(
-            "/(driver)/earnings"
-          )
+          router.push("/(driver)/earnings")
         }
       >
         <Text style={styles.secondaryText}>
@@ -477,37 +665,54 @@ export default function DriverDashboard() {
         </Text>
       </TouchableOpacity>
 
+      {/* COURSES */}
       <TouchableOpacity
         style={styles.secondaryButton}
         onPress={() =>
-          router.push(
-            "/(driver)/my-rides"
-          )
+          router.push("/(driver)/my-rides")
         }
       >
         <Text style={styles.secondaryText}>
           Mes courses
         </Text>
       </TouchableOpacity>
-      <IncomingRideCard
-        visible={!!incomingRide}
-        request={incomingRide}
-        countdown={countdown}
-        onAccept={acceptRide}
-        onReject={rejectRide}
-      />
-    </SafeAreaView>
-  );
+
+      {/* TEST */}
+      <DebugRideRequest />
+
+      <View style={styles.bottomSpace} />
+
+    </ScrollView>
+
+    <IncomingRideCard
+      visible={!!incomingRide}
+      request={incomingRide}
+      countdown={countdown}
+      onAccept={acceptRide}
+      onReject={rejectRide}
+    />
+
+  </SafeAreaView>
+);
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFF",
-    padding: 20,
-    marginTop: 100,
-  },
+ container: {
+  flex: 1,
+  backgroundColor: "#FFF",
+},
+scrollView: {
+  flex: 1,
+},
 
+contentContainer: {
+  padding: 20,
+  paddingBottom: 40,
+},
+
+bottomSpace: {
+  height: 30,
+},
   loading: {
     fontSize: 18,
     textAlign: "center",
