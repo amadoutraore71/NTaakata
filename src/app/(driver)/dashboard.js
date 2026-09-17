@@ -32,8 +32,9 @@ import {
     timeoutRideRequest,
 } from "../../../services/matching/rideRequestService";
 import {
-    playRideRequestSound,
-    stopRideRequestSound,
+  prepareRideRequestSound,
+  playRideRequestSound,
+  stopRideRequestSound,
 } from "../../../services/soundService";
 import { isSubscriptionValid } from "../../../services/subscriptionService";
 import AppHeader from "../../components/AppHeader";
@@ -110,7 +111,13 @@ export default function DriverDashboard() {
 
   }, [])
 );
+useEffect(() => {
+  prepareRideRequestSound();
 
+  return () => {
+    stopRideRequestSound();
+  };
+}, []);
  useEffect(() => {
 
   let unsubscribeRide = null;
@@ -159,39 +166,45 @@ export default function DriverDashboard() {
   };
 
 }, []);
- useEffect(() => {
+
+useEffect(() => {
   if (!incomingRide) {
-    stopRideRequestSound();
     return;
   }
 
-  // Nouvelle demande
-  playRideRequestSound();
+  console.log("⏱️ Compte à rebours démarré : 60 secondes");
 
   setCountdown(60);
 
-  const timer = setInterval(() => {
-    setCountdown((value) => {
-      if (value <= 1) {
-        clearInterval(timer);
+  const interval = setInterval(() => {
+    setCountdown((previous) => {
+      if (previous <= 1) {
+        clearInterval(interval);
+
+        console.log("⏰ Compte à rebours terminé");
+
         return 0;
       }
 
-      return value - 1;
+      return previous - 1;
     });
   }, 1000);
 
   return () => {
-    clearInterval(timer);
+    clearInterval(interval);
   };
 }, [incomingRide]);
-  useEffect(() => {
-  if (!incomingRide) return;
-
-  if (countdown !== 0) return;
+useEffect(() => {
+  if (!incomingRide || countdown !== 0) {
+    return;
+  }
 
   const expireRequest = async () => {
     try {
+      console.log(
+        "⏰ Demande expirée après 60 secondes :",
+        incomingRide.requestId
+      );
 
       await stopRideRequestSound();
 
@@ -201,13 +214,7 @@ export default function DriverDashboard() {
 
       setIncomingRide(null);
 
-      console.log(
-        "⏰ Demande expirée après 60 secondes :",
-        incomingRide.requestId
-      );
-
     } catch (error) {
-
       console.error(
         "❌ Erreur expiration demande :",
         error
@@ -220,8 +227,7 @@ export default function DriverDashboard() {
   expireRequest();
 
 }, [countdown, incomingRide]);
- const listenIncomingRide = (userId) => {
-
+const listenIncomingRide = (userId) => {
   const q = query(
     collection(db, "ride_requests"),
     where("driverId", "==", userId),
@@ -230,43 +236,30 @@ export default function DriverDashboard() {
 
   return onSnapshot(q, async (snapshot) => {
 
-    // ==========================================
-    // AUCUNE DEMANDE
-    // ==========================================
-
     if (snapshot.empty) {
-
-      console.log("📭 Aucune demande conducteur");
-
       await stopRideRequestSound();
-
       setIncomingRide(null);
-
       return;
     }
 
-    // ==========================================
-    // DEMANDE REÇUE
-    // ==========================================
-
     const request = snapshot.docs[0];
 
-    console.log("📩 DEMANDE REÇUE :", {
-      requestId: request.id,
-      rideId: request.data().rideId,
-      status: request.data().status,
-    });
-
-    // ==========================================
-    // STOCKER LA DEMANDE
-    // ==========================================
-
-    setIncomingRide({
+    const newRide = {
       id: request.data().rideId,
       requestId: request.id,
       ...request.data(),
-    });
+    };
 
+    console.log("🚨 NOUVELLE DEMANDE REÇUE");
+
+    // 🔊 SON IMMÉDIAT
+    playRideRequestSound();
+
+    // 🚨 MODAL IMMÉDIAT
+    setIncomingRide(newRide);
+
+   
+    
   });
 };
   const checkSubscription = async (driver) => {

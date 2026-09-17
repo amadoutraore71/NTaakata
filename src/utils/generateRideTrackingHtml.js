@@ -1776,11 +1776,8 @@ async function drawRoute(
                     color:
                         "#16A34A",
 
-                    weight:
-                        6,
-
-                    opacity:
-                        0.9,
+                    weight: 7,
+                    opacity: 1,
 
                 }
 
@@ -2053,14 +2050,9 @@ async function drawDestinationRoute(
 
                 {
 
-                    color:
-                        "#16A34A",
-
-                    weight:
-                        6,
-
-                    opacity:
-                        0.9,
+                    color: "#16A34A",
+                    weight: 7,
+                    opacity: 1,
 
                 }
 

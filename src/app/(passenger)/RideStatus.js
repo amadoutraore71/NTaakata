@@ -24,7 +24,6 @@ import {
   debugCancelRide,
   debugFinishRide,
   debugResetRide,
-  debugSimulateRide,
 } from "../../../services/debugService";
 
 import {
@@ -637,82 +636,26 @@ movementRunningRef.current = true;
         // ARRIVÉE À DESTINATION
         // =========================================
 
-    onFinished: async () => {
+onFinished: async () => {
   try {
+    console.log("📍 CONDUCTEUR ARRIVÉ À DESTINATION");
+    console.log("⏸️ La course reste en cours.");
 
-    // =================================================
-    // 1. TERMINER LA COURSE
-    // =================================================
-
-    await updateDoc(
-      doc(
-        db,
-        "rides",
-        ride.id
-      ),
-      {
-        status: "completed",
-
-        completedAt:
-          serverTimestamp(),
-      }
-    );
-
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "🏁 COURSE TERMINÉE"
-    );
-
-    console.log(
-      "📍 Conducteur arrivé à destination."
-    );
-
-    // =================================================
-    // 2. RENDRE LE CONDUCTEUR DISPONIBLE
-    // =================================================
-
-    await updateDoc(
-      doc(
-        db,
-        "users",
-        ride.driverId
-      ),
-      {
-        isOnline: true,
-
-        lastLocationUpdate:
-          new Date(),
-      }
-    );
-
-    console.log(
-      "🟢 Conducteur de nouveau disponible :",
-      ride.driverId
-    );
-
-    console.log(
-      "========================================"
-    );
+    // IMPORTANT :
+    // L'arrivée à destination NE termine PAS automatiquement la course.
+    // Le conducteur devra appuyer sur "Terminer la course".
 
   } catch (error) {
-
     console.error(
-      "❌ Erreur clôture course :",
+      "❌ Erreur après arrivée à destination :",
       error
     );
-
   } finally {
-
-    movementRunningRef.current =
-      false;
+    movementRunningRef.current = false;
 
     console.log(
       "🔓 movementRunning = false"
     );
-
   }
 },
       });
@@ -1036,60 +979,64 @@ useEffect(() => {
   // ===================================================
   // SIMULATION ACCEPTATION ANCIENNE
   // ===================================================
+const handleOldAcceptRide = async () => {
+  if (!ride?.id) {
+    console.log("⚠️ Impossible de simuler l'acceptation : course introuvable");
+    return;
+  }
 
-  const handleOldAcceptRide = async () => {
-    try {
-      const selectedDriver =
-        nearbyDrivers.find(
-          (item) => item.id === ride.currentSearchingDriverId,
-        ) ||
-        nearbyDrivers[0] ||
-        null;
+  try {
+    console.log("🧪 TEST : simulation de l'acceptation conducteur");
+    console.log("🚗 Course :", ride.id);
 
-      if (!selectedDriver) {
-        console.log("❌ Aucun conducteur disponible.");
+    // Recherche d'un conducteur disponible
+    const availableDrivers = await findAvailableDrivers(
+      ride.pickup?.latitude,
+      ride.pickup?.longitude
+    );
 
-        return;
-      }
-
-      console.log("🚕 Ancienne simulation acceptation :", selectedDriver);
-
-      await debugSimulateRide(
-        ride.id,
-
-        selectedDriver,
-      );
-
-      await updateDoc(
-        doc(db, "rides", ride.id),
-
-        {
-          driverId: selectedDriver.id,
-
-          driverName: selectedDriver.name,
-
-          driverPhone: selectedDriver.phone ?? null,
-
-          driverVehicleType: selectedDriver.vehicleType ?? null,
-
-          driverLatitude: selectedDriver.latitude,
-
-          driverLongitude: selectedDriver.longitude,
-
-          driverDistance: selectedDriver.distance ?? null,
-
-          status: "driver_assigned",
-
-          driverArrivingAt: null,
-        },
-      );
-
-      console.log("✅ Conducteur affecté.");
-    } catch (error) {
-      console.log("❌ Erreur ancienne acceptation :", error);
+    if (!availableDrivers || availableDrivers.length === 0) {
+      console.log("❌ Aucun conducteur disponible pour le test");
+      return;
     }
-  };
 
+    const selectedDriver = availableDrivers[0];
+
+    console.log("🚗 Conducteur sélectionné :", {
+      userId: selectedDriver.userId,
+      name: selectedDriver.name,
+      latitude: selectedDriver.latitude,
+      longitude: selectedDriver.longitude,
+    });
+
+    // IMPORTANT :
+    // On affecte simplement le conducteur à la course.
+    // Aucun déplacement n'est lancé ici.
+    await updateDoc(doc(db, "rides", ride.id), {
+      driverId: selectedDriver.userId,
+      driverName: selectedDriver.name || "",
+      driverPhone: selectedDriver.phone || "",
+      driverLatitude: Number(selectedDriver.latitude),
+      driverLongitude: Number(selectedDriver.longitude),
+      driverVehicleType: selectedDriver.vehicleType || "",
+      driverVehicleBrand: selectedDriver.vehicleBrand || "",
+      driverVehicleModel: selectedDriver.vehicleModel || "",
+      driverVehicleColor: selectedDriver.vehicleColor || "",
+      driverPlateNumber: selectedDriver.plateNumber || "",
+      status: "driver_assigned",
+      acceptedAt: serverTimestamp(),
+    });
+
+    console.log("✅ TEST : conducteur affecté à la course");
+    console.log("📍 Statut :", "driver_assigned");
+    console.log("⏸️ Aucun déplacement automatique");
+  } catch (error) {
+    console.error(
+      "❌ Erreur simulation acceptation conducteur :",
+      error
+    );
+  }
+};
   // ===================================================
   // TERMINER
   // ===================================================
@@ -1375,33 +1322,7 @@ useEffect(() => {
               rideRequests={rideRequests}
               onAcceptRequest={handleDebugAcceptRequest}
               onRejectRequest={handleDebugRejectRequest}
-              // ======================================
-              // SIMULER UNE COURSE
-              // ======================================
-
-              onSimulateRide={async () => {
-                try {
-                  if (ride.status !== "searching") {
-                    console.log("❌ La course n'est plus en recherche.");
-
-                    return;
-                  }
-
-                  if (!nearbyDrivers.length) {
-                    console.log("❌ Aucun conducteur disponible.");
-
-                    return;
-                  }
-
-                  await debugSimulateRide(
-                    ride.id,
-
-                    nearbyDrivers[0],
-                  );
-                } catch (error) {
-                  console.log("❌ Erreur simulation :", error);
-                }
-              }}
+              
               // ======================================
               // ANCIEN BOUTON ACCEPTER
               // ======================================

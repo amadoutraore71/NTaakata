@@ -48,9 +48,9 @@ export default function DebugRideRequest() {
       // 2. COORDONNÉES DEBUG
       // =================================================
 
-   const pickup = {
-  latitude: 13.4320,
-  longitude: -6.2630,
+ const pickup = {
+  latitude: 13.4300,
+  longitude: -6.2600,
   address: "Position debug du passager",
 };
 

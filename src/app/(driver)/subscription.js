@@ -12,15 +12,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-  doc,
-  getDoc,
-  updateDoc,
+    doc,
+    getDoc,
+    updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../../../firebase/config";
 import Header from "../../components/Header";
-import { getUser } from "../../storage/userStorage";
-
+import { getUser, saveUser } from "../../storage/userStorage";
 export default function Subscription() {
   const [dailyFee, setDailyFee] = React.useState(null);
   const [durationHours, setDurationHours] = React.useState(24);
@@ -305,30 +304,28 @@ console.log(
       "📅 Expiration :",
       expiresAt.toISOString()
     );
+console.log(
+  "========================================"
+);
 
-    console.log(
-      "========================================"
-    );
+// ============================================================
+// CONFIRMATION
+// ============================================================
 
-    // ============================================================
-    // CONFIRMATION
-    // ============================================================
-
-    Alert.alert(
-      "Abonnement activé ✅",
-      `Votre abonnement de ${dailyFee} FCFA est actif pendant ${durationHours} heures.`,
-      [
-        {
-          text: "Continuer",
-          onPress: () => {
-            router.replace(
-              "/(driver)/dashboard"
-            );
-          },
-        },
-      ]
-    );
-
+Alert.alert(
+  "Abonnement activé ✅",
+  `Votre abonnement de ${dailyFee} FCFA est actif pendant ${durationHours} heures.`,
+  [
+    {
+      text: "Continuer",
+      onPress: () => {
+        router.replace(
+          "/(driver)/dashboard"
+        );
+      },
+    },
+  ]
+);
   } catch (error) {
     console.error(
       "❌ Erreur activation abonnement :",

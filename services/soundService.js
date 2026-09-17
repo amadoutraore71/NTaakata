@@ -5,132 +5,102 @@ import {
 
 let player = null;
 let isPlaying = false;
+let isPrepared = false;
 
-const SOUND_FILE = require("../assets/sounds/ride-request.mp3");
-
-const waitForPlayerToLoad = async (audioPlayer) => {
-  const maxAttempts = 30;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    if (audioPlayer.isLoaded) {
-      console.log("✅ Fichier audio chargé");
-      return true;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  console.log("❌ Le fichier audio n'a pas été chargé après 3 secondes");
-  return false;
-};
-
-export async function playRideRequestSound() {
+/**
+ * Prépare le lecteur audio dès l'ouverture du dashboard.
+ * Cela évite d'attendre le chargement du fichier au moment
+ * où une demande de course arrive.
+ */
+export async function prepareRideRequestSound() {
   try {
-    if (player && isPlaying) {
-      console.log("🔊 Sonnerie déjà en cours");
+    if (player) {
+      isPrepared = true;
+      console.log("🔊 Sonnerie déjà préparée");
       return;
     }
 
-    console.log("🔊 Préparation de la sonnerie...");
-
     await setAudioModeAsync({
       playsInSilentMode: true,
-      interruptionMode: "mixWithOthers",
+      interruptionMode: "doNotMix",
       shouldPlayInBackground: false,
     });
 
-    // Nettoyer l'ancien lecteur
-    if (player) {
-      try {
-        player.pause();
-      } catch {}
+    console.log("🔊 Préparation de la sonnerie...");
 
-      try {
-        player.remove();
-      } catch {}
-
-      player = null;
-      isPlaying = false;
-    }
-
-    console.log("🔊 Création du lecteur...");
-
-    player = createAudioPlayer(SOUND_FILE);
+    player = createAudioPlayer(
+      require("../assets/sounds/ride-request.mp3")
+    );
 
     player.volume = 1.0;
     player.loop = true;
 
-    console.log("🔊 État initial :", {
-      loaded: player.isLoaded,
-      playing: player.playing,
-      paused: player.paused,
-      volume: player.volume,
-      muted: player.muted,
-    });
+    isPrepared = true;
 
-    // IMPORTANT :
-    // attendre que le MP3 soit réellement chargé
-    const loaded = await waitForPlayerToLoad(player);
+    console.log("✅ Sonnerie préparée");
+  } catch (error) {
+    console.error("❌ Erreur préparation sonnerie :", error);
 
-    if (!loaded) {
+    player = null;
+    isPrepared = false;
+    isPlaying = false;
+  }
+}
+
+/**
+ * Démarre la sonnerie.
+ */
+export async function playRideRequestSound() {
+  try {
+    if (!player) {
+      await prepareRideRequestSound();
+    }
+
+    if (!player) {
       console.log("❌ Impossible de démarrer la sonnerie");
-
-      try {
-        player.remove();
-      } catch {}
-
-      player = null;
-      isPlaying = false;
       return;
     }
 
-    console.log("🔊 Lecture de la sonnerie...");
+    if (isPlaying) {
+      return;
+    }
+
+    player.volume = 1.0;
+    player.loop = true;
 
     player.play();
 
     isPlaying = true;
 
-    console.log("🔊 Sonnerie démarrée :", {
-      loaded: player.isLoaded,
-      playing: player.playing,
-      paused: player.paused,
-      volume: player.volume,
-    });
-
+    console.log("🔊 Sonnerie demande démarrée");
   } catch (error) {
-    console.log("❌ Erreur démarrage sonnerie :", error);
-
-    player = null;
+    console.error("❌ Erreur démarrage sonnerie :", error);
     isPlaying = false;
   }
 }
 
-export async function stopRideRequestSound() {
+/**
+ * Arrête et réinitialise la sonnerie.
+ */
+export function stopRideRequestSound() {
   try {
     if (!player) {
       isPlaying = false;
       return;
     }
 
-    const currentPlayer = player;
+    try {
+      player.pause();
+    } catch {}
 
-    player = null;
+    try {
+      player.seekTo(0);
+    } catch {}
+
     isPlaying = false;
-
-    try {
-      currentPlayer.pause();
-    } catch {}
-
-    try {
-      currentPlayer.remove();
-    } catch {}
 
     console.log("🔇 Sonnerie demande arrêtée");
-
   } catch (error) {
-    console.log("❌ Erreur arrêt sonnerie :", error);
-
-    player = null;
-    isPlaying = false;
+    console.error("❌ Erreur arrêt sonnerie :", error);
   }
 }
