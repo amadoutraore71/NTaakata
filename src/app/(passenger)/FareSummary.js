@@ -1,7 +1,7 @@
 import {
-    StyleSheet,
-    Text,
-    View,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import { calculateFare } from "../../utils/fareCalculator";
@@ -68,41 +68,48 @@ export default function FareSummary({
 }
 
 const styles = StyleSheet.create({
-
   container: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
-    padding: 18,
-    marginBottom: 20,
-    elevation: 3,
+
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+
+    marginBottom: 0,
+
+    elevation: 0,
   },
 
   title: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 15,
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111111",
+
+    marginBottom: 10,
   },
 
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    alignItems: "center",
+
+    marginBottom: 6,
   },
 
   label: {
     fontSize: 16,
-    color: "#666",
+    color: "#666666",
   },
 
   value: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111111",
   },
 
   price: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "800",
     color: "#0B6E4F",
   },
-
 });

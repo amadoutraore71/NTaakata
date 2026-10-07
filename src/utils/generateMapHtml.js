@@ -1,609 +1,810 @@
 export default function generateMapHtml({
-  mode = "tracking",
-  passengerLocation = null,
+
+  mode = "drivers",
+
+  passengerLocation,
+
   driverLocation = null,
-  destinationLocation = null,
+
   drivers = [],
-  passengerLabel = "Moi",
+
+  searchingDriver = null,
+
+  icons = {},
+
+  destinationLocation = null,
+
 }) {
-  const normalize = (p) => {
-    if (!p) return null;
-    const latitude = Number(p.latitude);
-    const longitude = Number(p.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-    return { latitude, longitude };
-  };
 
-  const passenger = normalize(passengerLocation);
-  const destination = normalize(destinationLocation);
-  const driver = normalize(driverLocation);
+  const passenger = passengerLocation || { latitude: 0, longitude: 0 };
 
-  const normalizedDrivers = Array.isArray(drivers)
-    ? drivers.map((d) => {
-        const p = normalize(d);
-        if (!p) return null;
-        return {
-          ...d,
-          id: String(d.id ?? d.docId ?? d.userId ?? "driver"),
-          latitude: p.latitude,
-          longitude: p.longitude,
-        };
-      }).filter(Boolean)
-    : [];
+  const initialDrivers = Array.isArray(drivers) ? drivers : [];
 
-  const initialDriver = driver
-    ? {
-        ...(normalizedDrivers[0] || {}),
-        ...driverLocation,
-        id: String(
-          driverLocation?.id ??
-          driverLocation?.docId ??
-          driverLocation?.userId ??
-          normalizedDrivers[0]?.id ??
-          "driver"
-        ),
-        latitude: driver.latitude,
-        longitude: driver.longitude,
-      }
-    : normalizedDrivers[0] || null;
+  const searching = searchingDriver || initialDrivers[0] || null;
 
-  const safe = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
+  const driver = driverLocation || null;
+
+  const destination = destinationLocation || null;
+
+
 
   return `<!DOCTYPE html>
+
 <html>
+
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<meta charset="utf-8" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
 <style>
-html,body,#map{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#f5f6f7}
-.nta-marker{background:transparent!important;border:0!important;box-shadow:none!important}
-.driver-marker{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
-.driver-marker{transform-origin:center center;will-change:transform}
-.driver-marker svg{width:34px;height:34px;display:block}
-.passenger-marker{
-  width:22px;
-  height:27px;
-  background:transparent;
-  position:relative;
-  filter:drop-shadow(0 2px 3px rgba(0,0,0,.22));
-}
-.passenger-pin{
-  position:absolute;
-  top:0;
-  left:0px;
-  width:17px;
-  height:17px;
-  background:#1677e8;
-  border:2px solid #fff;
-  border-radius:50% 50% 50% 0;
-  transform:rotate(-45deg);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-}
-.passenger-pin-label{
-  transform:rotate(45deg);
-  color:#fff;
-  font-size:10px;
-  font-weight:700;
-  line-height:1;
-  letter-spacing:-.2px;
-}
-.passenger-pin-point{
-  display:none;
-}
-.destination-marker{width:22px;height:27px;display:flex;align-items:flex-start;justify-content:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,.22))}
-.destination-marker .pin{width:17px;height:17px;background:#ef4444;border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center}
-.destination-marker .pin-dot{width:4px;height:4px;background:#fff;border-radius:50%;transform:rotate(45deg)}
-.leaflet-control-zoom{margin-top:8px!important}
+
+html,body,#map{width:100%;height:100%;margin:0;padding:0;background:#dfe7e3;overflow:hidden}
+
+.leaflet-container{font-family:Arial,sans-serif;background:#dfe7e3}
+
+.vehicle-icon,.passenger-icon{background:transparent!important;border:0!important;box-shadow:none!important}
+
+.vehicle-icon svg,.passenger-icon svg{display:block;width:100%;height:100%;filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+
 </style>
+
 </head>
+
 <body>
+
 <div id="map"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
+
 (function(){
-  const MODE=${safe(mode)};
-  const INITIAL_PASSENGER=${safe(passenger)};
-  const INITIAL_DESTINATION=${safe(destination)};
-  const INITIAL_DRIVER=${safe(initialDriver)};
-  const INITIAL_DRIVERS=${safe(normalizedDrivers)};
 
-  let map=null;
-  let passengerMarker=null;
-  let destinationMarker=null;
-  let driverMarker=null;
+  "use strict";
 
-  let activeRouteLayer=null;
-  let activeRoutePoints=[];
-  let activeRouteKind=null;
 
-  let animationFrame=null;
-  let animationToken=0;
-  let lastDriverPosition=null;
-  let driverHeading=0;
-  let headingInitialized=false;
 
-  function calculateHeading(from,to){
-    if(!valid(from)||!valid(to))return null;
-    const lat1=Number(from.latitude)*Math.PI/180;
-    const lat2=Number(to.latitude)*Math.PI/180;
-    const dLon=(Number(to.longitude)-Number(from.longitude))*Math.PI/180;
-    const y=Math.sin(dLon)*Math.cos(lat2);
-    const x=Math.cos(lat1)*Math.sin(lat2)-
-      Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
-    const angle=Math.atan2(y,x)*180/Math.PI;
-    return (angle+360)%360;
+  const MODE = ${JSON.stringify(mode)};
+
+  const PASSENGER = ${JSON.stringify(passenger)};
+
+  const INITIAL_DRIVER = ${JSON.stringify(driver)};
+
+  const INITIAL_DRIVERS = ${JSON.stringify(initialDrivers)};
+
+  const SEARCHING_DRIVER = ${JSON.stringify(searching)};
+
+  const DESTINATION = ${JSON.stringify(destination)};
+
+
+
+  function send(type, payload){
+
+    try {
+
+      window.ReactNativeWebView.postMessage(JSON.stringify({type, ...(payload||{})}));
+
+    } catch(e) {}
+
   }
 
-  function shortestAngle(from,to){
-    return ((to-from+540)%360)-180;
-  }
+  function debug(message){ send("debug", {message:String(message)}); }
 
-  function setDriverHeading(angle, immediate=false){
-    if(!Number.isFinite(angle)||!driverMarker)return;
-    const element=driverMarker.getElement();
-    const icon=element?.querySelector?.('.driver-marker');
-    if(!icon)return;
+    window.onerror = function(message, source, line, col, error) {
+    const msg = String(message || "");
+    const src = source ? String(source) : "";
+    const hasDetails = !!(src || line || col || (error && error.stack));
 
-    if(!headingInitialized || immediate){
-      driverHeading=angle;
-      headingInitialized=true;
-    }else{
-      const delta=shortestAngle(driverHeading,angle);
-      // Rotation progressive : on ne saute jamais brutalement d'un angle à l'autre.
-      driverHeading+=delta*0.18;
+    // WebView/Chromium can report a generic cross-origin
+    // "Script error." with no useful source, line, column or stack.
+    // It is not actionable and must not be treated as an application
+    // JavaScript error.
+    if (msg === "Script error." && !hasDetails) {
+      debug("⚠️ WebView a signalé un Script error générique sans détails — ignoré");
+      return true;
     }
 
-    icon.style.transform=\`rotate(\${driverHeading}deg)\`;
-  }
-
-  function send(data){
-    try{window.ReactNativeWebView.postMessage(JSON.stringify(data));}catch(e){}
-  }
-  function debug(message){send({type:"debug",message});}
-  function valid(p){
-    return p && Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude));
-  }
-  function ll(p){return [Number(p.latitude),Number(p.longitude)];}
-
-  function vehicleSvg(type){
-    const isMoto=String(type||"").trim().toLowerCase().includes("moto");
-
-    if(isMoto){
-      // Moto dessinée avec l'avant vers le HAUT.
-      // Ainsi 0° = Nord et la rotation suit directement le heading GPS.
-      return '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true">'+
-        '<circle cx="16" cy="6" r="3.1" stroke="#111827" stroke-width="2.2"/>'+
-        '<circle cx="16" cy="26" r="3.1" stroke="#111827" stroke-width="2.2"/>'+
-        '<path d="M16 9v4.2l-4.2 5.1v4.1h8.4v-4.1L16 13.2" stroke="#16A34A" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>'+
-        '<path d="M13.1 18.3h5.8M13.8 13.1h4.4" stroke="#16A34A" stroke-width="2.2" stroke-linecap="round"/>'+
-        '<path d="M18.8 10.2l2.1-2.3" stroke="#111827" stroke-width="2" stroke-linecap="round"/>'+
-        '</svg>';
-    }
-
-    // Voiture dessinée avec l'avant vers le HAUT.
-    return '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true">'+
-      '<path d="M9 9.5h14l2.7 7.1v8.1H6.3v-8.1L9 9.5Z" stroke="#16A34A" stroke-width="2.2" stroke-linejoin="round"/>'+
-      '<path d="M10.5 9.5 12.1 6.8h7.8l1.6 2.7" stroke="#16A34A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'+
-      '<path d="M10 15.2h12" stroke="#16A34A" stroke-width="2.1" stroke-linecap="round"/>'+
-      '<circle cx="8.2" cy="24.1" r="2.4" fill="#111827"/>'+
-      '<circle cx="23.8" cy="24.1" r="2.4" fill="#111827"/>'+
-      '<path d="M11 19.2h10" stroke="#111827" stroke-width="1.7" stroke-linecap="round"/>'+
-      '</svg>';
-  }
-
-  function passengerHtml(){
-    return '<div class="passenger-marker">'+
-      '<div class="passenger-pin">'+
-       '<div class="passenger-pin-label"></div>'+
-        '<div class="passenger-pin-point"></div>'+
-      '</div>'+
-    '</div>';
-  }
-
-  function driverIcon(type){
-    return L.divIcon({
-      className:"nta-marker",
-      html:'<div class="driver-marker">'+vehicleSvg(type)+'</div>',
-      iconSize:[29,29],
-iconAnchor:[14.5,14.5]
+    send("webview_js_error", {
+      message: msg,
+      source: src,
+      line: line || 0,
+      column: col || 0,
+      stack: error && error.stack ? String(error.stack) : "",
     });
-  }
-  function passengerIcon(){
-    return L.divIcon({
-      className:"nta-marker",
-      html:passengerHtml(),
-      iconSize: [22, 27],
-      iconAnchor: [11, 26],
-    });
-  }
-  function destinationIcon(){
-    return L.divIcon({
-      className:"nta-marker",
-      html:'<div class="destination-marker"><div class="pin"><div class="pin-dot"></div></div></div>',
-      iconSize:[22,27],
-      iconAnchor:[11,25]
-    });
-  }
 
-  function showPassenger(p){
-    if(!valid(p))return;
-    if(!passengerMarker){
-      passengerMarker=L.marker(ll(p),{icon:passengerIcon(),zIndexOffset:1000}).addTo(map);
-      debug("👤 Passager visible");
-    }else passengerMarker.setLatLng(ll(p));
-  }
-  function hidePassenger(){
-    if(passengerMarker){
-      map.removeLayer(passengerMarker);
-      passengerMarker=null;
-      debug("👤 Passager masqué");
-    }
-  }
-  function showDestination(p){
-    if(!valid(p))return;
-    if(!destinationMarker){
-      destinationMarker=L.marker(ll(p),{icon:destinationIcon(),zIndexOffset:900}).addTo(map);
-      debug("📍 Destination visible");
-    }else destinationMarker.setLatLng(ll(p));
-  }
-  function hideDestination(){
-    if(destinationMarker){
-      map.removeLayer(destinationMarker);
-      destinationMarker=null;
-    }
-  }
-  function showDriver(d){
-    if(!valid(d))return;
-    const type=String(d.vehicleType||d.driverVehicleType||"car").trim().toLowerCase();
-    if(!driverMarker){
-      driverMarker=L.marker(ll(d),{icon:driverIcon(type),zIndexOffset:1200}).addTo(map);
-      debug("🚗 Conducteur visible");
-    }else{
-      driverMarker.setLatLng(ll(d));
-    }
-    lastDriverPosition={latitude:Number(d.latitude),longitude:Number(d.longitude)};
-
-    // À l'affichage initial, on conserve l'orientation actuelle sans provoquer de rotation.
-    const initialHeading = Number(d.heading);
-    if(Number.isFinite(initialHeading)) setDriverHeading(initialHeading,true);
-  }
-
-  function clearRoute(){
-    if(activeRouteLayer){
-      map.removeLayer(activeRouteLayer);
-      activeRouteLayer=null;
-    }
-    activeRoutePoints=[];
-    activeRouteKind=null;
-  }
-
-  function drawRoute(points,kind){
-    clearRoute();
-    activeRoutePoints=points.slice();
-    activeRouteKind=kind;
-    activeRouteLayer=L.polyline(activeRoutePoints,{
-      color:"#16A34A",
-      weight:3,
-      opacity:.95,
-      lineCap:"round",
-      lineJoin:"round"
-    }).addTo(map);
-  }
-
-  function distance(a,b){
-    const latScale=111320;
-    const lonScale=111320*Math.cos(((Number(a[0])+Number(b[0]))/2)*Math.PI/180);
-    const dy=(Number(b[0])-Number(a[0]))*latScale;
-    const dx=(Number(b[1])-Number(a[1]))*lonScale;
-    return Math.sqrt(dx*dx+dy*dy);
-  }
-
-  function projectOnSegment(p,a,b){
-    const latScale=111320;
-    const lonScale=111320*Math.cos(Number(p[0])*Math.PI/180);
-    const ax=Number(a[1])*lonScale, ay=Number(a[0])*latScale;
-    const bx=Number(b[1])*lonScale, by=Number(b[0])*latScale;
-    const px=Number(p[1])*lonScale, py=Number(p[0])*latScale;
-    const dx=bx-ax,dy=by-ay;
-    const len2=dx*dx+dy*dy;
-    let t=len2?((px-ax)*dx+(py-ay)*dy)/len2:0;
-    t=Math.max(0,Math.min(1,t));
-    return [
-      Number(a[0])+(Number(b[0])-Number(a[0]))*t,
-      Number(a[1])+(Number(b[1])-Number(a[1]))*t
-    ];
-  }
-
-  function projectOnRoute(p,points){
-    if(!points.length)return null;
-    if(points.length===1)return {point:points[0],distance:0,index:0};
-    const target=ll(p);
-    let best={point:points[0],distance:Infinity,index:0};
-    let travelled=0;
-    for(let i=0;i<points.length-1;i++){
-      const a=points[i],b=points[i+1];
-      const proj=projectOnSegment(target,a,b);
-      const d=distance(target,proj);
-      if(d<best.distance){
-        best={point:proj,distance:d,index:i};
-      }
-      travelled+=distance(a,b);
-    }
-    return best;
-  }
-
-  function routeTotal(points){
-    let total=0;
-    for(let i=0;i<points.length-1;i++)total+=distance(points[i],points[i+1]);
-    return total;
-  }
-
-  function routePositionAt(points,meters){
-    if(!points.length)return null;
-    if(points.length===1)return points[0];
-    let remaining=Math.max(0,Math.min(meters,routeTotal(points)));
-    for(let i=0;i<points.length-1;i++){
-      const seg=distance(points[i],points[i+1]);
-      if(remaining<=seg){
-        const t=seg?remaining/seg:0;
-        return [
-          points[i][0]+(points[i+1][0]-points[i][0])*t,
-          points[i][1]+(points[i+1][1]-points[i][1])*t
-        ];
-      }
-      remaining-=seg;
-    }
-    return points[points.length-1];
-  }
-
-  function cumulativeDistanceToProjection(points,projection){
-    if(!points.length)return 0;
-    if(points.length===1)return 0;
-    let total=0;
-    for(let i=0;i<points.length-1;i++){
-      const a=points[i],b=points[i+1];
-      const proj=projectOnSegment(projection,a,b);
-      const d=distance(projection,proj);
-      if(d<1.5){
-        return total+distance(a,proj);
-      }
-      total+=distance(a,b);
-    }
-    return total;
-  }
-
-  function trimRoute(position){
-    if(!activeRouteLayer||activeRoutePoints.length<2)return;
-    const target=ll(position);
-    let bestIndex=0,bestDist=Infinity,bestPoint=activeRoutePoints[0];
-    for(let i=0;i<activeRoutePoints.length-1;i++){
-      const proj=projectOnSegment(target,activeRoutePoints[i],activeRoutePoints[i+1]);
-      const d=distance(target,proj);
-      if(d<bestDist){
-        bestDist=d;
-        bestIndex=i;
-        bestPoint=proj;
-      }
-    }
-    const remaining=[target];
-    if(bestDist>250){
-      // If a Firestore point is temporarily off-route, do not distort the line.
-      return;
-    }
-    remaining.push(bestPoint);
-    for(let i=bestIndex+1;i<activeRoutePoints.length;i++)remaining.push(activeRoutePoints[i]);
-    activeRouteLayer.setLatLngs(remaining);
-  }
-
-  function animateDriverTo(target,duration){
-    if(!valid(target)||!driverMarker)return;
-
-    const token=++animationToken;
-    if(animationFrame)cancelAnimationFrame(animationFrame);
-
-    const start=lastDriverPosition
-      ? [lastDriverPosition.latitude,lastDriverPosition.longitude]
-      : driverMarker.getLatLng();
-
-    const targetLL=[Number(target.latitude),Number(target.longitude)];
-
-    let useRoute=false;
-    let startM=0,endM=0;
-
-    if(activeRoutePoints.length>=2){
-      const s=projectOnRoute({latitude:start[0],longitude:start[1]},activeRoutePoints);
-      const e=projectOnRoute(target,activeRoutePoints);
-      if(s&&e&&s.distance<150&&e.distance<150){
-        startM=cumulativeDistanceToProjection(activeRoutePoints,s.point);
-        endM=cumulativeDistanceToProjection(activeRoutePoints,e.point);
-        useRoute=true;
-      }
-    }
-
-    const t0=performance.now();
-    const ease=(x)=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
-
-    let previousAnimatedPos={latitude:start[0],longitude:start[1]};
-
-    function frame(now){
-      if(token!==animationToken)return;
-      const progress=Math.min(1,(now-t0)/duration);
-      const e=ease(progress);
-      let pos;
-
-      if(useRoute){
-        const meters=startM+(endM-startM)*e;
-        pos=routePositionAt(activeRoutePoints,meters);
-      }else{
-        pos=[
-          start[0]+(targetLL[0]-start[0])*e,
-          start[1]+(targetLL[1]-start[1])*e
-        ];
-      }
-
-      const previousPos=previousAnimatedPos;
-      const currentPos={latitude:pos[0],longitude:pos[1]};
-
-      // L'orientation suit la trajectoire réelle. Quand on suit une route OSRM,
-      // on regarde légèrement devant le véhicule pour anticiper les virages.
-      let heading=null;
-      if(useRoute && activeRoutePoints.length>=2){
-        const lookAheadMeters=Math.max(8, Math.min(25, Math.abs(endM-startM)*0.08));
-        const currentMeters=startM+(endM-startM)*e;
-        const aheadMeters=Math.min(routeTotal(activeRoutePoints), currentMeters+lookAheadMeters);
-        const ahead=routePositionAt(activeRoutePoints,aheadMeters);
-        if(ahead){
-          heading=calculateHeading(currentPos,{latitude:ahead[0],longitude:ahead[1]});
-        }
-      }
-      if(heading===null) heading=calculateHeading(previousPos,currentPos);
-      if(heading!==null) setDriverHeading(heading);
-
-      driverMarker.setLatLng(pos);
-      lastDriverPosition=currentPos;
-      previousAnimatedPos=currentPos;
-      trimRoute({latitude:pos[0],longitude:pos[1]});
-
-      if(progress<1){
-        animationFrame=requestAnimationFrame(frame);
-      }else{
-        const finalPosition={latitude:targetLL[0],longitude:targetLL[1]};
-        const finalHeading=calculateHeading(lastDriverPosition,finalPosition);
-        if(finalHeading!==null) setDriverHeading(finalHeading);
-        driverMarker.setLatLng(targetLL);
-        lastDriverPosition=finalPosition;
-        trimRoute(target);
-        animationFrame=null;
-      }
-    }
-
-    animationFrame=requestAnimationFrame(frame);
-  }
-
-  async function fetchRoute(start,end){
-    const a=ll(start),b=ll(end);
-    const direct=map.distance(a,b);
-    if(direct<2)return {points:[a,b],distance:direct};
-
-    const url="https://router.project-osrm.org/route/v1/driving/"+
-      a[1]+","+a[0]+";"+b[1]+","+b[0]+"?overview=full&geometries=geojson";
-    const response=await fetch(url);
-    if(!response.ok)throw new Error("OSRM HTTP "+response.status);
-    const data=await response.json();
-    const coords=data.routes?.[0]?.geometry?.coordinates;
-    if(!coords?.length)throw new Error("Réponse OSRM invalide");
-    return {
-      points:coords.map(c=>[Number(c[1]),Number(c[0])]),
-      distance:Number(data.routes[0].distance||direct)
-    };
-  }
-
-  async function showPickupRoute(d){
-    if(!valid(d)||!valid(INITIAL_PASSENGER))return;
-    try{
-      const route=await fetchRoute(d,INITIAL_PASSENGER);
-      drawRoute(route.points,"pickup");
-      const bounds=activeRouteLayer.getBounds();
-      if(bounds.isValid())map.fitBounds(bounds,{padding:[45,45],maxZoom:17});
-      send({type:"route_info",distance:route.distance});
-      debug("🟢 Route conducteur → passager tracée");
-    }catch(e){
-      drawRoute([ll(d),ll(INITIAL_PASSENGER)],"pickup");
-      debug("⚠️ Route directe conducteur → passager utilisée");
-    }
-  }
-
-  async function showDestinationRoute(d,destination){
-    if(!valid(d)||!valid(destination))return;
-    hidePassenger();
-    showDestination(destination);
-    try{
-      const route=await fetchRoute(d,destination);
-      drawRoute(route.points,"destination");
-      const bounds=activeRouteLayer.getBounds();
-      if(bounds.isValid())map.fitBounds(bounds,{padding:[45,45],maxZoom:17});
-      send({type:"destination_route_info",distance:route.distance});
-      debug("🟢 Route conducteur → destination tracée");
-    }catch(e){
-      drawRoute([ll(d),ll(destination)],"destination");
-      debug("⚠️ Route directe conducteur → destination utilisée");
-    }
-  }
-
-  function fitInitial(){
-    const pts=[];
-    if(valid(INITIAL_PASSENGER))pts.push(ll(INITIAL_PASSENGER));
-    if(valid(INITIAL_DRIVER))pts.push(ll(INITIAL_DRIVER));
-    if(pts.length===1)map.setView(pts[0],15);
-    else if(pts.length>1)map.fitBounds(pts,{padding:[45,45],maxZoom:16});
-  }
-
-  function initialize(){
-    map=L.map("map",{zoomControl:true,attributionControl:true});
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
-      maxZoom:19,
-      attribution:"&copy; OpenStreetMap contributors"
-    }).addTo(map);
-
-    // Début de course : destination volontairement cachée.
-    showPassenger(INITIAL_PASSENGER);
-    hideDestination();
-
-    if(MODE==="tracking")showDriver(INITIAL_DRIVER);
-    else INITIAL_DRIVERS.forEach(showDriver);
-
-    fitInitial();
-    send({type:"ready"});
-    debug("✅ Carte créée une seule fois");
-  }
-
-  window.__ntaakataReceiveMessage=async function(payload){
-    try{
-      const m=typeof payload==="string"?JSON.parse(payload):payload;
-      if(!m?.type)return;
-
-      if(m.type==="driver_position"){
-        if(valid(m.driver)){
-          if(!driverMarker)showDriver(m.driver);
-          else animateDriverTo(m.driver,900);
-        }
-        return;
-      }
-
-      if(m.type==="show_driver_route"){
-        await showPickupRoute(m.driver);
-        return;
-      }
-
-      if(m.type==="start_destination_route"){
-        await showDestinationRoute(m.driver,m.destinationLocation||INITIAL_DESTINATION);
-        return;
-      }
-
-      if(m.type==="hide_passenger"){
-        hidePassenger();
-        return;
-      }
-
-      if(m.type==="clear_driver_route"){
-        clearRoute();
-        return;
-      }
-    }catch(e){
-      debug("❌ Erreur Leaflet : "+e.message);
-    }
+    return true;
   };
 
-  window.addEventListener("error",e=>{
-    send({type:"webview_js_error",message:e.message||"Erreur JavaScript"});
+
+
+  window.addEventListener("unhandledrejection", function(event){
+
+    const reason = event && event.reason;
+
+    send("webview_js_error", {
+
+      message: reason && reason.message ? String(reason.message) : String(reason || "Unhandled promise rejection"),
+
+      stack: reason && reason.stack ? String(reason.stack) : ""
+
+    });
+
   });
 
-  initialize();
+
+
+  debug("Le script HTML démarre");
+
+  debug("MODE = " + MODE);
+
+
+
+  if (typeof L === "undefined") {
+
+    send("webview_js_error", {message:"Leaflet n'est pas chargé"});
+
+    return;
+
+  }
+
+
+
+  const map = L.map("map", {zoomControl:false, attributionControl:true});
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+
+    maxZoom:19,
+
+    attribution:"© OpenStreetMap contributors"
+
+  }).addTo(map);
+
+
+
+  const passengerMarker = {};
+
+  const driverMarkers = {};
+
+  let pickupRouteLayer = null;
+
+  let destinationRouteLayer = null;
+
+  let searchingLineLayer = null;
+
+  let searchingAnimationFrame = null;
+
+  let pickupRouteShown = false;
+
+  let destinationRouteShown = false;
+
+  let pickupRoutePoints = null;
+
+  let destinationRoutePoints = null;
+
+  let pickupRouteIndex = 0;
+
+  let destinationRouteIndex = 0;
+
+  const ARRIVAL_THRESHOLD_METERS = 25;
+
+  let routeRequestRunning = false;
+
+  let destinationRequestRunning = false;
+
+  let currentPhase = MODE === "tracking" ? "pickup" : "searching";
+
+
+
+  const passengerSvg = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2.5a7 7 0 1 1 0 14 7 7 0 0 1 0-14Zm-10 27c.9-6.1 4.3-9.2 10-9.2s9.1 3.1 10 9.2H6Z" fill="#16a34a"/></svg>';
+
+  const carSvg = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M7 8.5h18l2.6 8H29a2 2 0 0 1 2 2v6h-3v2h-4v-2H8v2H4v-2H1v-6a2 2 0 0 1 2-2h1.4l2.6-8Zm2.3 3-1.6 5h16.6l-1.6-5H9.3ZM6 19.2a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2Zm20 0a2.1 2.1 0 1 0 0 4.2 2.1 2.1 0 0 0 0-4.2Z" fill="#111827"/><path d="M9 13h14" stroke="#fff" stroke-width="1.2"/></svg>';
+
+  const motoSvg = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="23" r="4" fill="#111827"/><circle cx="24" cy="23" r="4" fill="#111827"/><path d="M8 23h6l3-7h5l2 7h-4l-2-5h-4l-2 5H8Zm5-9h5l-2-4h-4l1 4Zm5 0 3-3 3 3" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+
+
+  function icon(svg, size, className){
+
+    return L.divIcon({html:svg,className:className,iconSize:[size,size],iconAnchor:[size/2,size/2],popupAnchor:[0,-size/2]});
+
+  }
+
+  const passengerIcon = icon(passengerSvg, 24, "passenger-icon");
+
+  const carIcon = icon(carSvg, 24, "vehicle-icon");
+
+  const motoIcon = icon(motoSvg, 23, "vehicle-icon");
+
+
+
+  function valid(p){
+
+    if(!p) return false;
+
+    return Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude));
+
+  }
+
+  function point(p){ return [Number(p.latitude), Number(p.longitude)]; }
+
+  function idOf(d){ return String(d && (d.id || d.docId || d.userId || d.phone || "unknown")); }
+
+  function vehicleIcon(d){ return String(d && d.vehicleType).toLowerCase() === "car" ? carIcon : motoIcon; }
+
+
+
+  function showPassenger(){
+
+    if(!valid(PASSENGER)) return;
+
+    if(passengerMarker.layer){ map.removeLayer(passengerMarker.layer); }
+
+    passengerMarker.layer = L.marker(point(PASSENGER), {icon:passengerIcon, zIndexOffset:1000}).addTo(map);
+
+    debug("Marqueur passager créé");
+
+  }
+
+
+
+  function popupFor(d){
+
+    const name = d && d.name ? String(d.name) : "Conducteur";
+
+    return '<b>'+name+'</b>';
+
+  }
+
+
+
+  function trimRouteBehindDriver(points, layer, progressKey, lat, lng){
+
+    if(!Array.isArray(points) || points.length < 2 || !layer) return;
+
+    let startIndex = progressKey === "pickup" ? pickupRouteIndex : destinationRouteIndex;
+    let nearestIndex = startIndex;
+    let best = Infinity;
+
+    for(let i=startIndex; i<points.length; i++){
+      const p = points[i];
+      const dLat = Number(p[0]) - lat;
+      const dLng = Number(p[1]) - lng;
+      const d = dLat*dLat + dLng*dLng;
+      if(d < best){
+        best = d;
+        nearestIndex = i;
+      }
+    }
+
+    if(nearestIndex < startIndex) nearestIndex = startIndex;
+
+    if(progressKey === "pickup") pickupRouteIndex = nearestIndex;
+    else destinationRouteIndex = nearestIndex;
+
+    const remaining = points.slice(nearestIndex);
+    if(remaining.length < 2) return;
+
+    remaining[0] = [lat, lng];
+    layer.setLatLngs(remaining);
+  }
+
+
+
+  function hidePassengerAtPickup(){
+
+    if(passengerMarker.layer){
+      try { map.removeLayer(passengerMarker.layer); } catch(e) {}
+      passengerMarker.layer = null;
+    }
+
+    if(pickupRouteLayer){
+      try { map.removeLayer(pickupRouteLayer); } catch(e) {}
+      pickupRouteLayer = null;
+    }
+
+    pickupRoutePoints = null;
+    pickupRouteIndex = 0;
+    pickupRouteShown = true;
+    debug("Passager arrivé : marqueur et route pickup supprimés");
+  }
+
+
+
+  function finishDestinationRoute(){
+
+    if(destinationRouteLayer){
+      try { map.removeLayer(destinationRouteLayer); } catch(e) {}
+      destinationRouteLayer = null;
+    }
+
+    destinationRoutePoints = null;
+    destinationRouteIndex = 0;
+    destinationRouteShown = true;
+    debug("Destination atteinte : route supprimée");
+  }
+
+
+
+  function animateMarker(marker, target, duration){
+
+    if(!marker || !valid(target)) return;
+
+    if(marker._animationFrame) cancelAnimationFrame(marker._animationFrame);
+
+    const start = marker.getLatLng();
+    const end = L.latLng(Number(target.latitude), Number(target.longitude));
+    const ms = Math.max(250, Math.min(Number(duration)||650, 900));
+    const started = performance.now();
+
+    function frame(now){
+
+      const t = Math.min(1, (now-started)/ms);
+      const e = t*t*(3-2*t);
+      const lat = start.lat + (end.lat-start.lat)*e;
+      const lng = start.lng + (end.lng-start.lng)*e;
+
+      marker.setLatLng([lat,lng]);
+
+      if(marker._routeKind === "pickup" && pickupRouteLayer && pickupRoutePoints){
+        trimRouteBehindDriver(pickupRoutePoints, pickupRouteLayer, "pickup", lat, lng);
+        if(map.distance(L.latLng(lat,lng), L.latLng(point(PASSENGER)[0],point(PASSENGER)[1])) <= ARRIVAL_THRESHOLD_METERS){
+          hidePassengerAtPickup();
+        }
+      }
+
+      if(marker._routeKind === "destination" && destinationRouteLayer && destinationRoutePoints && valid(DESTINATION)){
+        trimRouteBehindDriver(destinationRoutePoints, destinationRouteLayer, "destination", lat, lng);
+        if(map.distance(L.latLng(lat,lng), L.latLng(point(DESTINATION)[0],point(DESTINATION)[1])) <= ARRIVAL_THRESHOLD_METERS){
+          finishDestinationRoute();
+        }
+      }
+
+      if(t<1) marker._animationFrame=requestAnimationFrame(frame);
+      else {
+        marker._animationFrame=null;
+        marker.setLatLng(end);
+      }
+    }
+
+    marker._animationFrame=requestAnimationFrame(frame);
+  }
+
+
+  function showDrivers(list, fit){
+
+    const arr = Array.isArray(list) ? list : [];
+
+    const active = new Set();
+
+    arr.forEach(function(d){
+
+      if(!valid(d)) return;
+
+      const id = idOf(d);
+
+      active.add(id);
+
+      const pos = point(d);
+
+      let marker = driverMarkers[id];
+
+      if(!marker){
+
+        marker = L.marker(pos, {icon:vehicleIcon(d), zIndexOffset:500}).addTo(map);
+
+        marker._driverData = d;
+
+        marker.bindPopup(popupFor(d));
+
+        driverMarkers[id]=marker;
+
+      } else {
+
+        const distance = map.distance(marker.getLatLng(), L.latLng(pos[0],pos[1]));
+
+        marker._driverData = d;
+
+        marker.setPopupContent(popupFor(d));
+
+        animateMarker(marker, d, distance > 100 ? 750 : 550);
+
+      }
+
+    });
+
+    Object.keys(driverMarkers).forEach(function(id){
+
+      if(!active.has(id) && MODE !== "tracking"){
+
+        if(driverMarkers[id]._animationFrame) cancelAnimationFrame(driverMarkers[id]._animationFrame);
+
+        map.removeLayer(driverMarkers[id]);
+
+        delete driverMarkers[id];
+
+      }
+
+    });
+
+    debug("Conducteurs affichés : " + active.size);
+
+    if(fit && active.size){
+
+      const points=[point(PASSENGER)];
+
+      arr.filter(valid).forEach(function(d){points.push(point(d));});
+
+      if(points.length>1) map.fitBounds(points,{padding:[35,35],maxZoom:16});
+
+    }
+
+  }
+
+
+
+  function removeSearchingLine(){
+
+    if(searchingAnimationFrame){
+
+      try { cancelAnimationFrame(searchingAnimationFrame); } catch(e) {}
+
+    }
+
+    searchingAnimationFrame=null;
+
+    if(searchingLineLayer){
+
+      try { map.removeLayer(searchingLineLayer); } catch(e) {}
+
+      searchingLineLayer=null;
+
+    }
+
+  }
+
+
+
+  function drawSearchingLine(d){
+
+    removeSearchingLine();
+
+    if(!valid(PASSENGER)||!valid(d)) return;
+
+    const a=point(PASSENGER), b=point(d);
+
+    // Ligne de recherche statique : pas de requestAnimationFrame.
+
+    // Cela évite les erreurs WebView et évite une boucle JS permanente.
+
+    searchingLineLayer=L.polyline([a,b],{
+
+      color:"#2563eb",
+
+      weight:3,
+      opacity:.9,
+
+      lineCap:"butt"
+
+    }).addTo(map);
+
+    debug("Ligne de recherche affichée");
+
+  }
+
+
+
+  async function fetchRoute(from,to,kind){
+
+    if(!valid(from)||!valid(to)) return;
+
+    const url="https://router.project-osrm.org/route/v1/driving/"+Number(from.longitude)+","+Number(from.latitude)+";"+Number(to.longitude)+","+Number(to.latitude)+"?overview=full&geometries=geojson";
+
+    try{
+
+      const response=await fetch(url);
+
+      if(!response.ok) throw new Error("OSRM HTTP "+response.status);
+
+      const json=await response.json();
+
+      const coords=json && json.routes && json.routes[0] && json.routes[0].geometry && json.routes[0].geometry.coordinates;
+
+      if(!Array.isArray(coords)||coords.length<2) throw new Error("Aucun tracé OSRM");
+
+      const latLngs=coords.map(function(c){return [Number(c[1]),Number(c[0])];});
+
+      if(kind==="pickup"){
+
+        pickupRoutePoints=latLngs;
+
+        if(pickupRouteLayer) map.removeLayer(pickupRouteLayer);
+
+        pickupRouteLayer=L.polyline(latLngs,{color:"#16a34a",weight:4,opacity:.95}).addTo(map);
+
+      } else {
+
+        destinationRoutePoints=latLngs;
+
+        if(destinationRouteLayer) map.removeLayer(destinationRouteLayer);
+
+        destinationRouteLayer=L.polyline(latLngs,{color:"#16a34a",weight:4,opacity:.95}).addTo(map);
+
+      }
+
+      send(kind==="pickup"?"route_info":"destination_route_info",{distance:json.routes[0].distance,duration:json.routes[0].duration});
+
+      debug("Route "+kind+" créée UNE FOIS");
+
+    }catch(e){
+      const fallback = [point(from), point(to)];
+
+      if(kind==="pickup"){
+        pickupRoutePoints=fallback;
+        pickupRouteIndex=0;
+        if(pickupRouteLayer) map.removeLayer(pickupRouteLayer);
+        pickupRouteLayer=L.polyline(fallback,{color:"#16a34a",weight:4,opacity:.95}).addTo(map);
+      } else {
+        destinationRoutePoints=fallback;
+        destinationRouteIndex=0;
+        if(destinationRouteLayer) map.removeLayer(destinationRouteLayer);
+        destinationRouteLayer=L.polyline(fallback,{color:"#16a34a",weight:4,opacity:.95}).addTo(map);
+      }
+
+      debug("Route "+kind+" : tracé direct de secours");
+      send("webview_js_error",{message:"OSRM indisponible pour "+kind+" : "+String(e)});
+    }
+
+  }
+
+
+
+  function startPickupRoute(d){
+
+    if(pickupRouteShown || routeRequestRunning || !valid(d)||!valid(PASSENGER)) return;
+
+    routeRequestRunning=true;
+
+    currentPhase="pickup";
+
+    const id=idOf(d);
+
+    if(!driverMarkers[id]) showDrivers([d],false);
+
+    if(driverMarkers[id]) driverMarkers[id]._routeKind="pickup";
+
+    fetchRoute(d,PASSENGER,"pickup").finally(function(){pickupRouteShown=true;routeRequestRunning=false;});
+
+  }
+
+
+
+  function startDestinationRoute(d){
+
+    if(destinationRouteShown || destinationRequestRunning || !valid(d)||!valid(DESTINATION)) return;
+
+    destinationRequestRunning=true;
+
+    currentPhase="destination";
+
+    removeSearchingLine();
+
+    const id=idOf(d);
+
+    if(!driverMarkers[id]) showDrivers([d],false);
+
+    if(driverMarkers[id]) driverMarkers[id]._routeKind="destination";
+
+    fetchRoute(d,DESTINATION,"destination").finally(function(){destinationRouteShown=true;destinationRequestRunning=false;});
+
+  }
+
+
+
+  function updateDriver(d){
+
+    if(!valid(d)) return;
+
+    const id=idOf(d);
+
+    let marker=driverMarkers[id];
+
+    if(!marker){
+
+      showDrivers([d],false);
+
+      marker=driverMarkers[id];
+
+    }
+
+    if(!marker) return;
+
+    if(currentPhase==="pickup") marker._routeKind="pickup";
+
+    if(currentPhase==="destination") marker._routeKind="destination";
+
+    animateMarker(marker,d,650);
+
+    marker._driverData=d;
+
+  }
+
+
+
+  function setPhase(phase){
+
+    currentPhase=phase;
+
+    if(phase==="searching"){
+
+      pickupRouteShown=false;
+
+      removeSearchingLine();
+
+      Object.keys(driverMarkers).forEach(function(id){driverMarkers[id]._routeKind=null;});
+
+    }
+
+    if(phase==="pickup") removeSearchingLine();
+
+    if(phase==="destination") removeSearchingLine();
+
+  }
+
+
+
+  function receive(message){
+
+    try{
+
+      const data=typeof message==="string"?JSON.parse(message):message;
+
+      if(!data) return;
+
+      if(data.type==="drivers_update"){
+
+        showDrivers(data.drivers||[], MODE!=="tracking");
+
+        if(MODE!=="tracking" && currentPhase==="searching"){
+
+          const candidate=SEARCHING_DRIVER || (data.drivers||[])[0];
+
+          if(candidate) drawSearchingLine(candidate);
+
+        }
+
+        return;
+
+      }
+
+      if(data.type==="searching_driver"){
+
+        if(MODE!=="tracking"){
+
+          currentPhase="searching";
+
+          if(data.driver) drawSearchingLine(data.driver); else removeSearchingLine();
+
+        }
+
+        return;
+
+      }
+
+      if(data.type==="clear_search" || data.type==="stop_routes"){
+
+        removeSearchingLine();
+
+        return;
+
+      }
+
+      if(data.type==="set_phase"){
+
+        setPhase(data.phase); return;
+
+      }
+
+      if(data.type==="driver_position"){
+
+        updateDriver(data.driver); return;
+
+      }
+
+      if(data.type==="driver_route" || data.type==="show_driver_route"){
+
+        setPhase("pickup");
+
+        startPickupRoute(data.driver); return;
+
+      }
+
+      if(data.type==="start_destination_route"){
+
+        setPhase("destination");
+
+        if(data.destination) DESTINATION.latitude=Number(data.destination.latitude), DESTINATION.longitude=Number(data.destination.longitude);
+
+        startDestinationRoute(data.driver); return;
+
+      }
+
+      if(data.type==="stop_destination_route"){
+
+        if(destinationRouteLayer){map.removeLayer(destinationRouteLayer);destinationRouteLayer=null;}
+
+        destinationRouteShown=false; destinationRoutePoints=null; return;
+
+      }
+
+    }catch(e){send("webview_js_error",{message:"Erreur réception message : "+String(e)});}
+
+  }
+
+
+
+  window.__ntaakataReceiveMessage=receive;
+
+  document.addEventListener("message",function(e){receive(e.data);});
+
+  window.addEventListener("message",function(e){receive(e.data);});
+
+
+
+  showPassenger();
+
+  // En mode tracking, Leaflet doit recevoir une vue initiale.
+  // Sinon la carte peut rester vide après l'acceptation du conducteur.
+  if(MODE==="tracking" && valid(PASSENGER)){
+    map.setView(point(PASSENGER), 15);
+    debug("Vue tracking initialisée sur le passager");
+  }
+
+  if(MODE==="drivers"){
+
+    currentPhase="searching";
+
+    showDrivers(INITIAL_DRIVERS,true);
+
+    if(SEARCHING_DRIVER) drawSearchingLine(SEARCHING_DRIVER);
+
+    else if(INITIAL_DRIVERS[0]) drawSearchingLine(INITIAL_DRIVERS[0]);
+
+  } else {
+
+    currentPhase="pickup";
+
+    if(INITIAL_DRIVER){
+
+      showDrivers([INITIAL_DRIVER],false);
+
+      if(driverMarkers[idOf(INITIAL_DRIVER)]) driverMarkers[idOf(INITIAL_DRIVER)]._routeKind="pickup";
+
+      if(valid(INITIAL_DRIVER) && valid(PASSENGER)){
+        map.fitBounds(
+          [point(PASSENGER), point(INITIAL_DRIVER)],
+          {padding:[35,35], maxZoom:16}
+        );
+        debug("Vue tracking cadrée sur passager + conducteur");
+      }
+
+    }
+
+  }
+
+
+
+  map.whenReady(function(){send("ready");debug("WebView Leaflet prête");});
+
 })();
+
 </script>
+
 </body>
+
 </html>`;
+
 }

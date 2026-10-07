@@ -31,7 +31,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
 
-    marginTop: 20,
+   
 
     shadowColor: "#000",
     shadowOffset: {

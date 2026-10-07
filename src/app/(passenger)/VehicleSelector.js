@@ -9,10 +9,7 @@ export default function VehicleSelector({
 }) {
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>
-        🚕 Choisissez votre véhicule
-      </Text>
-
+     
       <View style={styles.vehicleContainer}>
         <VehicleCard
           icon="🏍"
@@ -49,10 +46,9 @@ export default function VehicleSelector({
 }
 
 const styles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
-  },
-
+ section: {
+  marginBottom: 5,
+},
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",

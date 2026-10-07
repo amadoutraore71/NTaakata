@@ -64,25 +64,70 @@ export const getSubscriptionConfig = async () => {
 // ============================================================
 // VÉRIFIER LA DATE D'EXPIRATION
 // ============================================================
-export const isSubscriptionValid = (
-  subscriptionExpiresAt
-) => {
-  if (!subscriptionExpiresAt) {
+export const isSubscriptionValid = (subscriptionExpiresAt) => {
+  try {
+    if (!subscriptionExpiresAt) {
+      return false;
+    }
+
+    let expirationDate;
+
+    // Firestore Timestamp
+    if (
+      typeof subscriptionExpiresAt?.toDate === "function"
+    ) {
+      expirationDate = subscriptionExpiresAt.toDate();
+    }
+
+    // JavaScript Date
+    else if (
+      subscriptionExpiresAt instanceof Date
+    ) {
+      expirationDate = subscriptionExpiresAt;
+    }
+
+    // Timestamp numérique
+    else if (
+      typeof subscriptionExpiresAt === "number"
+    ) {
+      expirationDate = new Date(
+        subscriptionExpiresAt
+      );
+    }
+
+    // Chaîne ISO
+    else if (
+      typeof subscriptionExpiresAt === "string"
+    ) {
+      expirationDate = new Date(
+        subscriptionExpiresAt
+      );
+    }
+
+    else {
+      return false;
+    }
+
+    if (
+      !(expirationDate instanceof Date) ||
+      Number.isNaN(
+        expirationDate.getTime()
+      )
+    ) {
+      return false;
+    }
+
+    return new Date() < expirationDate;
+
+  } catch (error) {
+    console.log(
+      "❌ Erreur vérification abonnement :",
+      error
+    );
+
     return false;
   }
-
-  const now = new Date();
-
-  const expirationDate =
-    new Date(subscriptionExpiresAt);
-
-  if (isNaN(expirationDate.getTime())) {
-    return false;
-  }
-
-  return now < expirationDate;
 };
-
 
 // ============================================================
 // VÉRIFIER SI L'ABONNEMENT DU CONDUCTEUR EST VALIDE

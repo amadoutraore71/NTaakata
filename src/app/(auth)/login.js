@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   Alert,
   Image,
-
+  Keyboard,
   StatusBar,
   StyleSheet,
   Text,
@@ -108,18 +108,31 @@ export default function Login() {
         Entrez votre numéro de téléphone
       </Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Numéro de téléphone"
-        keyboardType="phone-pad"
-        value={phone}
-        onChangeText={setPhone}
-      />
+    <TextInput
+  style={styles.input}
+  placeholder="Numéro de téléphone"
+  keyboardType="phone-pad"
+  value={phone}
+  maxLength={8}
+  onChangeText={(text) => {
+    const value = text.replace(/\D/g, "");
 
-      <TouchableOpacity
-        style={styles.loginButton}
-        onPress={handleLogin}
-      >
+    setPhone(value);
+
+    // Fermer automatiquement le clavier après 8 chiffres
+    if (value.length === 8) {
+      Keyboard.dismiss();
+    }
+  }}
+/>
+
+     <TouchableOpacity
+  style={styles.loginButton}
+  onPress={() => {
+    Keyboard.dismiss();
+    handleLogin();
+  }}
+>
         <Text style={styles.loginButtonText}>
           {loading
             ? "Chargement..."

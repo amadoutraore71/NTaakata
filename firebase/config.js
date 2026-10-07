@@ -1,8 +1,14 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeApp, getApp, getApps } from "firebase/app";
+
+import {
+  getAuth,
+  getReactNativePersistence,
+  initializeAuth,
+} from "firebase/auth";
+
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 const firebaseConfig = {
   apiKey: "AIzaSyApbr70gcbgACLvYV7-FVTK-b5P9gf-z2g",
   authDomain: "ntaakata.firebaseapp.com",
@@ -11,12 +17,26 @@ const firebaseConfig = {
   messagingSenderId: "38744766427",
   appId: "1:38744766427:web:bfe4ca8dedc5136db719fe",
 };
-const app = initializeApp(firebaseConfig);
+const app = getApps().length
+  ? getApp()
+  : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+let auth;
+
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(
+      ReactNativeAsyncStorage
+    ),
+  });
+} catch (error) {
+  if (error?.code === "auth/already-initialized") {
+    auth = getAuth(app);
+  } else {
+    throw error;
+  }
+}
+
+export { auth };
 
 export const db = getFirestore(app);
-
-export const storage = getStorage(app);
-
-export default app;

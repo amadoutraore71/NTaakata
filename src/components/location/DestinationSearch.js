@@ -1,288 +1,535 @@
 import { useEffect, useRef, useState } from "react";
+
 import {
-    ActivityIndicator,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
-import { searchLocations } from "../../../services/locationService";
-import {
-    getRecentDestinations,
-    saveRecentDestination,
-} from "../../services/recentDestinationService";
-import { formatLocation } from "../../utils/locationFormatter";
+
 import { Ionicons } from "@expo/vector-icons";
+
+import { searchLocations } from "../../../services/locationService";
+
+import {
+  getRecentDestinations,
+  saveRecentDestination,
+} from "../../services/recentDestinationService";
+
+import { formatLocation } from "../../utils/locationFormatter";
+
 export default function DestinationSearch({
-    userId,
-    placeholder = "Où allez-vous ?",
-    onSelect,
+  userId,
+  placeholder = "Où allez-vous ?",
+  onSelect,
 }) {
-    const [text, setText] = useState("");
-    const [results, setResults] = useState([]);
-    const [recentDestinations, setRecentDestinations] = useState([]);
-    const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("");
+  const [results, setResults] = useState([]);
+  const [recentDestinations, setRecentDestinations] =
+    useState([]);
 
-    const timer = useRef(null);
+  const [loading, setLoading] = useState(false);
 
-    /**
-     * Chargement des destinations récentes
-     */
-    useEffect(() => {
-        if (userId) {
-            loadRecentDestinations();
-        }
-    }, [userId]);
+  // Indique qu'une destination vient d'être sélectionnée
+  const [destinationSelected, setDestinationSelected] =
+    useState(false);
 
-    async function loadRecentDestinations() {
-        try {
-            const data = await getRecentDestinations(userId);
+  const timer = useRef(null);
 
-            setRecentDestinations(data);
-        } catch (error) {
-            console.log(error);
-        }
+  // Permet d'ignorer une ancienne recherche
+  // qui terminerait après une nouvelle recherche
+  const searchId = useRef(0);
+
+  // ============================================================
+  // DESTINATIONS RÉCENTES
+  // ============================================================
+
+  useEffect(() => {
+    if (userId) {
+      loadRecentDestinations();
+    }
+  }, [userId]);
+
+  async function loadRecentDestinations() {
+    try {
+      const data = await getRecentDestinations(userId);
+
+      setRecentDestinations(
+        Array.isArray(data) ? data : []
+      );
+    } catch (error) {
+      console.log(
+        "Erreur destinations récentes :",
+        error
+      );
+
+      setRecentDestinations([]);
+    }
+  }
+
+  // ============================================================
+  // RECHERCHE
+  // ============================================================
+
+  useEffect(() => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
     }
 
-    /**
-     * Recherche avec debounce
-     */
-    useEffect(() => {
-        if (timer.current) {
-            clearTimeout(timer.current);
+    // Une destination vient d'être sélectionnée
+    if (destinationSelected) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    const searchText = text.trim();
+
+    // Moins de 2 caractères :
+    // on affiche les destinations récentes
+    if (searchText.length < 2) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    const currentSearchId = ++searchId.current;
+
+    timer.current = setTimeout(async () => {
+      try {
+        setLoading(true);
+
+        const data = await searchLocations(searchText);
+
+        // Si une autre recherche est plus récente,
+        // on ignore cette réponse
+        if (currentSearchId !== searchId.current) {
+          return;
         }
 
-        if (text.trim().length < 2) {
-            setResults([]);
-            return;
+        console.log(
+          "Premier résultat :",
+          JSON.stringify(data?.[0], null, 2)
+        );
+
+        setResults(
+          Array.isArray(data) ? data : []
+        );
+      } catch (error) {
+        if (currentSearchId !== searchId.current) {
+          return;
         }
 
-        timer.current = setTimeout(async () => {
-            try {
-                setLoading(true);
-
-                const data = await searchLocations(text);
-
-console.log(
-  "Premier résultat :",
-  JSON.stringify(data[0], null, 2)
-);
-
-setResults(data);
-            } catch (error) {
-                console.log(error);
-            } finally {
-                setLoading(false);
-            }
-        }, 300);
-
-        return () => {
-            if (timer.current) {
-                clearTimeout(timer.current);
-            }
-        };
-    }, [text]);
-
-    /**
-     * Sélection d'une destination
-     */
-    async function handleSelect(location) {
-        const selectedLocation = {
-            latitude: location.latitude,
-            longitude: location.longitude,
-
-            // Adresse utilisée partout dans l'application
-            address:
-                location.address ||
-                location.name ||
-                location.display_name ||
-                "",
-
-            // On conserve aussi les autres informations
-            name: location.name,
-            city: location.city,
-            region: location.region,
-            category: location.category,
-        };
-
-        setText(selectedLocation.address);
+        console.log(
+          "Erreur recherche destination :",
+          error
+        );
 
         setResults([]);
-
-        try {
-            if (userId) {
-                await saveRecentDestination(
-                    userId,
-                    selectedLocation
-                );
-
-                loadRecentDestinations();
-            }
-        } catch (error) {
-            console.log(error);
+      } finally {
+        if (currentSearchId === searchId.current) {
+          setLoading(false);
         }
+      }
+    }, 300);
 
-        onSelect?.(selectedLocation);
+    return () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+    };
+  }, [text, destinationSelected]);
+
+  // ============================================================
+  // SAISIE
+  // ============================================================
+
+  const handleTextChange = (value) => {
+    setText(value);
+
+    // L'utilisateur recommence à écrire :
+    // on réactive les suggestions
+    setDestinationSelected(false);
+
+    // Une nouvelle recherche devient prioritaire
+    searchId.current += 1;
+  };
+
+  // ============================================================
+  // SÉLECTION D'UNE DESTINATION
+  // ============================================================
+
+  async function handleSelect(location) {
+    if (!location) {
+      return;
     }
-    const displayedResults =
-        text.trim().length >= 2
-            ? (results || [])
-            : (recentDestinations || []);
 
-    const uniqueResults = displayedResults.filter(
-        (item, index, self) =>
-            index ===
-            self.findIndex(
-                (x) =>
-                    x.name === item.name &&
-                    x.latitude === item.latitude &&
-                    x.longitude === item.longitude
-            )
-    );
+    const selectedLocation = {
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
 
-    return (
-        <View style={styles.container}>
-            <TextInput
-                value={text}
-                onChangeText={setText}
-                placeholder={placeholder}
-                style={styles.input}
-            />
+      address:
+        location.address ||
+        location.name ||
+        location.display_name ||
+        "",
 
-            {loading && (
-                <View style={styles.loading}>
-                    <ActivityIndicator
-                        size="small"
-                        color="#22c55e"
-                    />
-                </View>
-            )}
+      name: location.name || "",
+      city: location.city || "",
+      region: location.region || "",
+      category: location.category || "",
+    };
 
-            {text.trim().length < 2 &&
-                recentDestinations.length > 0 && (
-                    <Text style={styles.historyTitle}>
-                        🕘 Destinations récentes
-                    </Text>
-                )}
+    // ----------------------------------------------------------
+    // 1. Afficher le lieu sélectionné dans le champ
+    // ----------------------------------------------------------
 
-            <View>
-                {uniqueResults.map((item, index) => {
-    const formatted = formatLocation(item);
+    setText(selectedLocation.address);
 
-    return (
-        <Pressable
-            key={`${item.id || item.placeId || item.name}-${index}`}
-            style={styles.item}
-            onPress={() => handleSelect(item)}
-        >
-            <View style={styles.row}>
-               <Ionicons
-  name="location"
-  size={22}
-  color="#16a34a"
-  style={styles.icon}  
-/>
+    // ----------------------------------------------------------
+    // 2. Marquer immédiatement comme sélectionné
+    // ----------------------------------------------------------
 
-                <View style={styles.textContainer}>
-                    <Text style={styles.locationName}>
-                        {formatted.title}
-                    </Text>
+    setDestinationSelected(true);
 
-                    <Text style={styles.locationSubtitle}>
-                        {formatted.subtitle}
-                    </Text>
-                </View>
-            </View>
-        </Pressable>
-    );
-})}
-          </View>
+    // ----------------------------------------------------------
+    // 3. Supprimer immédiatement les suggestions
+    // ----------------------------------------------------------
+
+    setResults([]);
+
+    // ----------------------------------------------------------
+    // 4. Arrêter le chargement
+    // ----------------------------------------------------------
+
+    setLoading(false);
+
+    // ----------------------------------------------------------
+    // 5. Invalider les anciennes recherches
+    // ----------------------------------------------------------
+
+    searchId.current += 1;
+
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+
+    // ----------------------------------------------------------
+    // 6. Fermer le clavier
+    // ----------------------------------------------------------
+
+    Keyboard.dismiss();
+
+    // ----------------------------------------------------------
+    // 7. Sauvegarder dans les destinations récentes
+    // ----------------------------------------------------------
+
+    try {
+      if (userId) {
+        await saveRecentDestination(
+          userId,
+          selectedLocation
+        );
+
+        await loadRecentDestinations();
+      }
+    } catch (error) {
+      console.log(
+        "Erreur sauvegarde destination :",
+        error
+      );
+    }
+
+    // ----------------------------------------------------------
+    // 8. Envoyer la destination au parent
+    // ----------------------------------------------------------
+
+    onSelect?.(selectedLocation);
+  }
+
+  // ============================================================
+  // DESTINATIONS À AFFICHER
+  // ============================================================
+
+  let displayedResults = [];
+
+  if (!destinationSelected) {
+    if (text.trim().length >= 2) {
+      displayedResults = results || [];
+    } else {
+      displayedResults =
+        recentDestinations || [];
+    }
+  }
+
+  // ============================================================
+  // SUPPRESSION DES DOUBLONS
+  // ============================================================
+
+  const uniqueResults = displayedResults.filter(
+    (item, index, self) =>
+      index ===
+      self.findIndex(
+        (x) =>
+          x.name === item.name &&
+          Number(x.latitude) ===
+            Number(item.latitude) &&
+          Number(x.longitude) ===
+            Number(item.longitude)
+      )
+  );
+
+  // ============================================================
+  // AFFICHAGE
+  // ============================================================
+
+  return (
+    <View style={styles.container}>
+
+      {/* ======================================================
+          CHAMP DE RECHERCHE
+      ====================================================== */}
+
+      <View style={styles.inputContainer}>
+        <Ionicons
+          name="search-outline"
+          size={21}
+          color="#9CA3AF"
+          style={styles.searchIcon}
+        />
+
+        <TextInput
+          value={text}
+          onChangeText={handleTextChange}
+          placeholder={placeholder}
+          placeholderTextColor="#B8B8B8"
+          style={styles.input}
+          returnKeyType="search"
+          autoCorrect={false}
+          autoCapitalize="sentences"
+        />
+      </View>
+
+      {/* ======================================================
+          CHARGEMENT
+      ====================================================== */}
+
+      {loading && !destinationSelected && (
+        <View style={styles.loading}>
+          <ActivityIndicator
+            size="small"
+            color="#16A34A"
+          />
         </View>
-    );
+      )}
+
+      {/* ======================================================
+          LISTE DES DESTINATIONS
+      ====================================================== */}
+
+      {!destinationSelected &&
+        uniqueResults.length > 0 && (
+          <View style={styles.resultsContainer}>
+            {uniqueResults.map((item, index) => {
+              const formatted =
+                formatLocation(item);
+
+              return (
+                <Pressable
+                  key={`${
+                    item.id ||
+                    item.placeId ||
+                    item.name ||
+                    "destination"
+                  }-${index}`}
+                  style={({ pressed }) => [
+                    styles.item,
+                    pressed && styles.itemPressed,
+                  ]}
+                  onPress={() =>
+                    handleSelect(item)
+                  }
+                >
+                  <View style={styles.row}>
+
+                    <View style={styles.iconContainer}>
+                      <Ionicons
+                        name="location"
+                        size={21}
+                        color="#16A34A"
+                      />
+                    </View>
+
+                    <View
+                      style={
+                        styles.textContainer
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.locationName
+                        }
+                        numberOfLines={2}
+                      >
+                        {formatted.title}
+                      </Text>
+
+                      {formatted.subtitle ? (
+                        <Text
+                          style={
+                            styles.locationSubtitle
+                          }
+                          numberOfLines={2}
+                        >
+                          {
+                            formatted.subtitle
+                          }
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#9CA3AF"
+                    />
+
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+    </View>
+  );
 }
 
+
 const styles = StyleSheet.create({
-    container: {
-        width: "100%",
-    },
+container: {
+  width: "100%",
+},
 
-    input: {
-        height: 52,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "#fff",
-        paddingHorizontal: 16,
-        fontSize: 16,
-    },
+  inputContainer: {
+    height: 58,
 
-    loading: {
-        marginTop: 10,
-        alignItems: "center",
-    },
+    flexDirection: "row",
 
-    historyTitle: {
-        marginTop: 12,
-        marginBottom: 8,
-        fontWeight: "700",
-        fontSize: 15,
-    },
+    alignItems: "center",
 
-    item: {
-        backgroundColor: "#fff",
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: "#eee",
-    },
+    borderRadius: 16,
 
-    name: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: "#222",
-    },
+    borderWidth: 1,
+    borderColor: "#DDDDDD",
 
-    subtitle: {
-        marginTop: 3,
-        color: "#777",
-        fontSize: 13,
-    },
+    backgroundColor: "#FFFFFF",
+  },
 
-    empty: {
-        textAlign: "center",
-        marginTop: 20,
-        color: "#777",
-        fontSize: 14,
-    },
-    row: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
+  searchIcon: {
+    marginLeft: 17,
+  },
 
-    icon: {
-        fontSize: 24,
-        marginRight: 12,
-    },
+  input: {
+    flex: 1,
 
-    textContainer: {
-        flex: 1,
-    },
+    height: "100%",
+
+    paddingHorizontal: 12,
+
+    fontSize: 17,
+
+    color: "#111111",
+  },
+
+  // ----------------------------------------------------------
+  // CHARGEMENT
+  // ----------------------------------------------------------
+
+  loading: {
+    paddingVertical: 12,
+
+    alignItems: "center",
+  },
+
+  // ----------------------------------------------------------
+  // RÉSULTATS
+  // ----------------------------------------------------------
+
+  resultsContainer: {
+    marginTop: 8,
+
+    borderRadius: 14,
+
+    overflow: "hidden",
+
+    backgroundColor: "#FFFFFF",
+
+    borderWidth: 1,
+    borderColor: "#EEEEEE",
+  },
+
+  item: {
+    paddingVertical: 14,
+
+    paddingHorizontal: 12,
+
+    backgroundColor: "#FFFFFF",
+
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEEEEE",
+  },
+
+  itemPressed: {
+    backgroundColor: "#F0FDF4",
+  },
+
+  row: {
+    flexDirection: "row",
+
+    alignItems: "center",
+  },
+
+  iconContainer: {
+    width: 38,
+    height: 38,
+
+    borderRadius: 19,
+
+    alignItems: "center",
+    justifyContent: "center",
+
+    backgroundColor: "#ECFDF5",
+
+    marginRight: 12,
+  },
+
+  textContainer: {
+    flex: 1,
+
+    paddingRight: 8,
+  },
+
   locationName: {
-  fontSize: 16,
-  fontWeight: "700",
-  color: "#111827",
-},
+    fontSize: 16,
 
-locationSubtitle: {
-  marginTop: 3,
-  fontSize: 13,
-  color: "#6B7280",
-  lineHeight: 18,
-},
-name: {
-  fontSize: 16,
-  fontWeight: "600",
-  color: "#222",
-},
+    fontWeight: "700",
+
+    color: "#111827",
+  },
+
+  locationSubtitle: {
+    marginTop: 3,
+
+    fontSize: 13,
+
+    color: "#6B7280",
+
+    lineHeight: 18,
+  },
 });

@@ -2,30 +2,33 @@ import {
   router,
   useLocalSearchParams,
 } from "expo-router";
+
 import {
   collection,
   getDocs,
   query,
   where,
 } from "firebase/firestore";
+
 import { useRef, useState } from "react";
+
 import {
   Alert,
-
+  Keyboard,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { db } from "../../../firebase/config";
 import { saveUser } from "../../storage/userStorage";
+
 export default function OtpLogin() {
-  const { phone, role } =
-    useLocalSearchParams();
+  const { phone } = useLocalSearchParams();
 
   const [otp, setOtp] = useState([
     "",
@@ -34,39 +37,99 @@ export default function OtpLogin() {
     "",
   ]);
 
+  const [verifying, setVerifying] = useState(false);
+
   const input1 = useRef(null);
   const input2 = useRef(null);
   const input3 = useRef(null);
   const input4 = useRef(null);
 
-  const handleChange = (value, index) => {
+  // ============================================================
+  // CHANGEMENT D'UN CHIFFRE OTP
+  // ============================================================
+
+  const handleChange = async (value, index) => {
+    // Garder uniquement le dernier chiffre saisi
+    const digit = value.replace(/\D/g, "").slice(-1);
+
     const newOtp = [...otp];
-    newOtp[index] = value;
+
+    newOtp[index] = digit;
+
     setOtp(newOtp);
 
-    if (value && index === 0)
+    // Passage automatique au champ suivant
+    if (digit && index === 0) {
       input2.current?.focus();
+    }
 
-    if (value && index === 1)
+    if (digit && index === 1) {
       input3.current?.focus();
+    }
 
-    if (value && index === 2)
+    if (digit && index === 2) {
       input4.current?.focus();
-  };
-  const verifyCode = async () => {
-    const enteredCode = otp.join("");
+    }
 
-    // Vérification OTP
+    // ==========================================================
+    // 4ÈME CHIFFRE → VÉRIFICATION AUTOMATIQUE
+    // ==========================================================
+
+    if (digit && index === 3) {
+      const enteredCode = newOtp.join("");
+
+      Keyboard.dismiss();
+
+      await verifyCode(enteredCode);
+    }
+  };
+
+  // ============================================================
+  // VÉRIFICATION OTP
+  // ============================================================
+
+  const verifyCode = async (enteredCode) => {
+    if (verifying) {
+      return;
+    }
+
+    setVerifying(true);
+
+    // ==========================================================
+    // CODE DE TEST
+    // ==========================================================
+
     if (enteredCode !== "1234") {
+      setVerifying(false);
+
       Alert.alert(
-        "Erreur",
-        "Code OTP incorrect"
+        "Code incorrect",
+        "Le code OTP saisi est incorrect.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setOtp([
+                "",
+                "",
+                "",
+                "",
+              ]);
+
+              input1.current?.focus();
+            },
+          },
+        ]
       );
+
       return;
     }
 
     try {
-      // Recherche de l'utilisateur
+      // ========================================================
+      // RECHERCHE DE L'UTILISATEUR
+      // ========================================================
+
       const userQuery = query(
         collection(db, "users"),
         where("phone", "==", phone)
@@ -75,10 +138,13 @@ export default function OtpLogin() {
       const snapshot = await getDocs(userQuery);
 
       if (snapshot.empty) {
+        setVerifying(false);
+
         Alert.alert(
           "Erreur",
           "Utilisateur introuvable"
         );
+
         return;
       }
 
@@ -91,14 +157,21 @@ export default function OtpLogin() {
         };
       });
 
-      console.log("Utilisateur connecté :", user);
+      console.log(
+        "Utilisateur connecté :",
+        user
+      );
 
-      // Sauvegarde locale
+      // ========================================================
+      // SAUVEGARDE LOCALE
+      // ========================================================
+
       await saveUser(user);
 
-      // ===========================
+      // ========================================================
       // PASSAGER
-      // ===========================
+      // ========================================================
+
       if (user.role === "passenger") {
         const rideQuery = query(
           collection(db, "rides"),
@@ -113,6 +186,7 @@ export default function OtpLogin() {
           await getDocs(rideQuery);
 
         let activeRide = null;
+
         rideSnapshot.forEach((doc) => {
           const ride = {
             id: doc.id,
@@ -130,7 +204,8 @@ export default function OtpLogin() {
 
         if (activeRide) {
           router.replace({
-            pathname: "/(passenger)/RideStatus",
+            pathname:
+              "/(passenger)/RideStatus",
             params: {
               rideId: activeRide.id,
             },
@@ -144,25 +219,35 @@ export default function OtpLogin() {
         return;
       }
 
-      // ===========================
+      // ========================================================
       // CONDUCTEUR
-      // ===========================
+      // ========================================================
+
       if (user.role === "driver") {
         router.replace(
           "/(driver)/dashboard"
         );
+
         return;
       }
 
-      // ===========================
+      // ========================================================
       // ADMIN
-      // ===========================
+      // ========================================================
+
       if (user.role === "admin") {
         router.replace(
           "/(admin)/dashboard"
         );
+
         return;
       }
+
+      // ========================================================
+      // RÔLE INCONNU
+      // ========================================================
+
+      setVerifying(false);
 
       Alert.alert(
         "Erreur",
@@ -170,7 +255,12 @@ export default function OtpLogin() {
       );
 
     } catch (error) {
-      console.log(error);
+      console.log(
+        "Erreur connexion OTP :",
+        error
+      );
+
+      setVerifying(false);
 
       Alert.alert(
         "Erreur",
@@ -178,6 +268,10 @@ export default function OtpLogin() {
       );
     }
   };
+
+  // ============================================================
+  // INTERFACE
+  // ============================================================
 
   return (
     <SafeAreaView style={styles.container}>
@@ -199,55 +293,70 @@ export default function OtpLogin() {
       </Text>
 
       <View style={styles.otpContainer}>
+
+        {/* CHIFFRE 1 */}
         <TextInput
           ref={input1}
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
+          autoFocus
+          value={otp[0]}
           onChangeText={(text) =>
             handleChange(text, 0)
           }
         />
 
+        {/* CHIFFRE 2 */}
         <TextInput
           ref={input2}
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
+          value={otp[1]}
           onChangeText={(text) =>
             handleChange(text, 1)
           }
         />
 
+        {/* CHIFFRE 3 */}
         <TextInput
           ref={input3}
           style={styles.input}
           maxLength={1}
           keyboardType="number-pad"
+          value={otp[2]}
           onChangeText={(text) =>
             handleChange(text, 2)
           }
         />
 
+        {/* CHIFFRE 4 */}
         <TextInput
           ref={input4}
-          style={styles.input}
+          style={[
+            styles.input,
+            verifying && styles.inputVerifying,
+          ]}
           maxLength={1}
           keyboardType="number-pad"
+          value={otp[3]}
           onChangeText={(text) =>
             handleChange(text, 3)
           }
         />
+
       </View>
 
-      <TouchableOpacity
-        style={styles.verifyButton}
-        onPress={verifyCode}
-      >
-        <Text style={styles.verifyText}>
-          Vérifier
+      {/* MESSAGE PENDANT LA VÉRIFICATION */}
+
+      {verifying && (
+        <Text style={styles.verifyingText}>
+          Vérification...
         </Text>
-      </TouchableOpacity>
+      )}
+
+      {/* CODE DE TEST */}
 
       <Text style={styles.demo}>
         Code de test : 1234
@@ -297,20 +406,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 24,
     marginHorizontal: 6,
+    backgroundColor: "#FAFAFA",
   },
 
-  verifyButton: {
-    backgroundColor: "#F4C300",
-    width: "100%",
-    height: 55,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
+  inputVerifying: {
+    borderColor: "#0B6E4F",
   },
 
-  verifyText: {
-    fontSize: 18,
+  verifyingText: {
+    color: "#0B6E4F",
+    fontSize: 16,
     fontWeight: "bold",
+    marginTop: -20,
   },
 
   demo: {

@@ -169,6 +169,43 @@ export default function RideStatus() {
   }, [rideId]);
 
   // ============================================================
+  // COURSE ANNULÉE -> LIBÉRER LE CONDUCTEUR + ACCUEIL
+  // ============================================================
+  useEffect(() => {
+    if (ride?.status !== "cancelled") return;
+
+    console.log("🛑 Course annulée -> arrêt du déplacement");
+
+    stopDriverMovement(driver?.userId);
+
+    const releaseDriver = async () => {
+      if (!driver?.userId) return;
+
+      try {
+        await updateDoc(doc(db, "users", driver.userId), {
+          availability: "available",
+          currentRideId: null,
+        });
+
+        console.log("✅ Conducteur libéré après annulation");
+      } catch (error) {
+        console.error(
+          "❌ Erreur libération conducteur après annulation :",
+          error
+        );
+      }
+    };
+
+    releaseDriver();
+
+    const timer = setTimeout(() => {
+      router.replace("/(driver)/dashboard");
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [ride?.status, driver?.userId]);
+
+  // ============================================================
   // ÉCOUTE POSITION CONDUCTEUR
   // ============================================================
 
@@ -275,6 +312,14 @@ export default function RideStatus() {
                 completedAt: serverTimestamp(),
               });
 
+              if (driver?.userId) {
+                await updateDoc(doc(db, "users", driver.userId), {
+                  availability: "available",
+                  currentRideId: null,
+                });
+                console.log("✅ Conducteur libéré après fin de course");
+              }
+
               console.log("✅ Course terminée avec succès");
 
               router.replace("/(driver)/dashboard");
@@ -319,6 +364,13 @@ export default function RideStatus() {
       console.log(
         "⚠️ Impossible d'effectuer l'action : course ou conducteur introuvable",
       );
+      return;
+    }
+
+    // La fin de course doit demander confirmation avant actionLoading.
+    if (ride.status === "started") {
+      console.log("🏁 Demande de fin de course");
+      handleFinishRide();
       return;
     }
 
@@ -384,7 +436,7 @@ export default function RideStatus() {
 
         console.log("🚗 Lancement startDriverMovement()");
 
-       startDriverMovement({ 
+        await startDriverMovement({
           driverId: driver.userId,
 
           startLocation,
@@ -480,42 +532,25 @@ export default function RideStatus() {
 
         console.log("🚗 Lancement déplacement vers destination");
 
-       startDriverMovement({
-  driverId: driver.userId,
+        await startDriverMovement({
+          driverId: driver.userId,
 
-  startLocation,
+          startLocation,
 
-  endLocation: destinationLocation,
+          endLocation: destinationLocation,
 
-  onFinished: async () => {
-    console.log(
-      "📍 CONDUCTEUR ARRIVÉ À DESTINATION"
-    );
+          onFinished: async () => {
+            console.log("📍 CONDUCTEUR ARRIVÉ À DESTINATION");
 
-    console.log(
-      "ℹ️ Le statut reste started."
-    );
+            console.log("ℹ️ Le statut reste started.");
 
-    console.log(
-      "ℹ️ Le conducteur doit cliquer sur Terminer la course."
-    );
-  },
-});
+            console.log(
+              "ℹ️ Le conducteur doit cliquer sur Terminer la course.",
+            );
+          },
+        });
 
         console.log("🚗 Déplacement vers destination terminé");
-
-        return;
-      }
-
-      // ==================================================
-      // 3. TERMINER LA COURSE
-      // ==================================================
-
-      if (ride.status === "started") {
-        console.log("🏁 Demande de fin de course");
-
-        // Afficher la confirmation avant de terminer
-        handleFinishRide();
 
         return;
       }

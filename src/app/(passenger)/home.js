@@ -1,31 +1,28 @@
-import {
-  router,
-} from "expo-router";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
+
 import {
   ScrollView,
   StyleSheet,
-  Text,
-  View
+  View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
-import BottomNavigation from "../../components/BottomNavigation";
+
 import DestinationSearch from "../../components/location/DestinationSearch";
 import PrimaryButton from "../../components/PrimaryButton";
-import {
-  getUser,
-} from "../../storage/userStorage";
 
+import { getUser } from "../../storage/userStorage";
 import { getActiveRide } from "../../../services/getActiveRide";
 
 import usePassengerLocation from "../../hooks/usePassengerLocation";
 import useRideRequest from "../../hooks/useRideRequest";
-import {
-  calculateRoute,
-} from "../../utils/routeCalculator";
+
+import { calculateRoute } from "../../utils/routeCalculator";
+
 import FareSummary from "./FareSummary";
-import PassengerHeader from "./PassengerHeader";
 import VehicleSelector from "./VehicleSelector";
+
 export default function PassengerHome() {
   const {
     pickup,
@@ -33,188 +30,254 @@ export default function PassengerHome() {
     loadingLocation,
     stopLocation,
   } = usePassengerLocation();
-  const [estimatedDistance, setEstimatedDistance] = useState(0);
+
+  const [estimatedDistance, setEstimatedDistance] =
+    useState(0);
+
   const [user, setUser] = useState(null);
-  const [destination, setDestination] = useState(null);
+
+  const [destination, setDestination] =
+    useState(null);
+
   const [vehicleType, setVehicleType] =
     useState("moto");
-  const { requestRide } =
-    useRideRequest();
+
+  const { requestRide } = useRideRequest();
+
+  // ============================================================
+  // CHARGEMENT UTILISATEUR
+  // ============================================================
 
   useEffect(() => {
-
     loadUser();
   }, []);
 
   const loadUser = async () => {
-    const currentUser = await getUser();
+    try {
+      const currentUser = await getUser();
 
-    if (!currentUser) return;
+      if (!currentUser) {
+        return;
+      }
 
-    setUser(currentUser);
+      setUser(currentUser);
 
-    const activeRide = await getActiveRide(currentUser.userId);
+      const activeRide = await getActiveRide(
+        currentUser.userId
+      );
 
-    if (activeRide) {
-      router.replace({
-        pathname: "/(passenger)/RideStatus",
-        params: {
-          rideId: activeRide.id,
-        },
-      });
+      if (activeRide) {
+        router.replace({
+          pathname: "/(passenger)/RideStatus",
+          params: {
+            rideId: activeRide.id,
+          },
+        });
+
+        return;
+      }
+    } catch (error) {
+      console.log(
+        "Erreur chargement utilisateur :",
+        error
+      );
+    }
+  };
+
+  // ============================================================
+  // DESTINATION
+  // ============================================================
+
+  const handleDestinationSelect = async (place) => {
+    if (!currentLocation?.coords) {
+      console.log(
+        "❌ currentLocation =",
+        currentLocation
+      );
 
       return;
     }
 
-  };
+    try {
+      setDestination(place);
 
-  const handleDestinationSelect = async (place) => {
-      if (!currentLocation?.coords) {
-    console.log("❌ currentLocation =", currentLocation);
-    return;
-  }
-    setDestination(place);
+      const route = await calculateRoute(
+        {
+          latitude:
+            currentLocation.coords.latitude,
+          longitude:
+            currentLocation.coords.longitude,
+        },
+        {
+          latitude: place.latitude,
+          longitude: place.longitude,
+        }
+      );
 
-    const route = await calculateRoute(
-      {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-      },
-      {
-        latitude: place.latitude,
-        longitude: place.longitude,
+      if (!route) {
+        return;
       }
-    );
 
-    if (!route) return;
-
-    setEstimatedDistance(route.distance);
+      setEstimatedDistance(route.distance);
+    } catch (error) {
+      console.log(
+        "Erreur calcul itinéraire :",
+        error
+      );
+    }
   };
 
-  const handleRideRequest = () =>
+  // ============================================================
+  // DEMANDE DE COURSE
+  // ============================================================
 
+  const handleRideRequest = () => {
     requestRide({
-
       user,
-
       pickup,
-
       destination,
-
       currentLocation,
-
       vehicleType,
-
       stopLocation,
-
     });
+  };
+
+  // ============================================================
+  // AFFICHAGE
+  // ============================================================
 
   return (
-    <SafeAreaView
-      style={styles.container}
-    >
+    <SafeAreaView style={styles.container}>
       <ScrollView
-        contentContainerStyle={{
-          padding: 20,
-          paddingTop: 60,
-          paddingBottom: 30,
-        }}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* <PassengerHeader
-          user={user}
-        /> */}
+        <View style={styles.content}>
 
-        <View style={styles.card}>
+          {/* ==================================================
+              RECHERCHE
+          ================================================== */}
+
           <View style={styles.section}>
-
-            <Text style={styles.sectionTitle}>
-              🎯 Où allez-vous ?
-            </Text>
-
             <DestinationSearch
               userId={user?.userId}
               currentLocation={
-                currentLocation && {
-                  latitude: currentLocation.coords.latitude,
-                  longitude: currentLocation.coords.longitude,
-                }
+                currentLocation?.coords
+                  ? {
+                      latitude:
+                        currentLocation.coords.latitude,
+                      longitude:
+                        currentLocation.coords.longitude,
+                    }
+                  : undefined
               }
-              onSelect={handleDestinationSelect}
+              onSelect={
+                handleDestinationSelect
+              }
             />
-
           </View>
 
-          <VehicleSelector
-            vehicleType={vehicleType}
-            setVehicleType={setVehicleType}
-            estimatedDistance={estimatedDistance}
-          />
-          <FareSummary
-            distance={estimatedDistance}
-            vehicleType={vehicleType}
-          />
-          <PrimaryButton
-            title="Commander"
-            onPress={handleRideRequest}
-            disabled={!destination || loadingLocation}
-          />
+          {/* ==================================================
+              VÉHICULES
+          ================================================== */}
+
+          <View style={styles.section}>
+            <VehicleSelector
+              vehicleType={vehicleType}
+              setVehicleType={
+                setVehicleType
+              }
+              estimatedDistance={
+                estimatedDistance
+              }
+            />
+          </View>
+
+          {/* ==================================================
+              ESTIMATION
+          ================================================== */}
+
+          {destination && (
+            <View style={styles.section}>
+              <FareSummary
+                distance={
+                  estimatedDistance
+                }
+                vehicleType={
+                  vehicleType
+                }
+              />
+            </View>
+          )}
+
+          {/* ==================================================
+              COMMANDER
+          ================================================== */}
+
+          <View style={styles.commandSection}>
+            <PrimaryButton
+              title="Commander"
+              onPress={
+                handleRideRequest
+              }
+              disabled={
+                !destination ||
+                loadingLocation
+              }
+            />
+          </View>
 
         </View>
       </ScrollView>
-      <BottomNavigation active="home" />
     </SafeAreaView>
   );
 }
 
-const styles =
-  StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: "#F5F7FA",
-    },
-    vehicleContainer: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "stretch",
-      marginTop: 10,
-    },
-    title: {
-      fontSize: 28,
-      fontWeight: "bold",
-      color: "#0B6E4F",
-    },
+// ============================================================
+// STYLES
+// ============================================================
 
-    card: {
-      backgroundColor:
-        "#F8F8F8",
-      borderRadius: 15,
-      padding: 20,
-    },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
 
-    profileIcon: {
-      fontSize: 28,
-      color: "#FFF",
-    },
+  /*
+   * Le contenu prend toute la hauteur disponible.
+   * Les éléments sont répartis verticalement.
+   */
+  scrollContent: {
+    flexGrow: 1,
+    paddingVertical: 20,
+  },
 
-    section: {
-      marginBottom: 20,
-    },
+  /*
+   * Tous les blocs sont répartis de manière équilibrée.
+   */
+  content: {
+    width: "100%",
+    maxWidth: 520,
+    paddingHorizontal: 20,
+    alignSelf: "center",
 
-    sectionTitle: {
-      fontSize: 18,
-      fontWeight: "700",
-      marginBottom: 10,
-    },
+    flexGrow: 1,
+    justifyContent: "space-evenly",
+  },
 
+  /*
+   * Chaque bloc occupe sa largeur normalement.
+   */
+  section: {
+    width: "100%",
+  },
 
-    destinationInput: {
-      backgroundColor: "#FFF",
-      borderRadius: 18,
-      height: 58,
-      paddingHorizontal: 18,
-      fontSize: 17,
-      elevation: 4,
-    },
-
-  });
+  /*
+   * Le bouton est traité comme un bloc normal
+   * dans la répartition verticale.
+   */
+  commandSection: {
+    width: "100%",
+  },
+});

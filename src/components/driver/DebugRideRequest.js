@@ -1,351 +1,371 @@
 import {
   addDoc,
   collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
   serverTimestamp,
+  updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 
-import { Alert, StyleSheet, Text, TouchableOpacity } from "react-native";
+import {
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import { db } from "../../../firebase/config";
+import {
+  stopDriverMovement,
+} from "../../../src/services/simulation/driverMovementService";
 import { getUser } from "../../storage/userStorage";
 
 export default function DebugRideRequest() {
+  if (!__DEV__) return null;
 
-  const createDebugRequest = async () => {
-
+  const simulateRideRequest = async () => {
     try {
+      console.log("========================================");
+      console.log("🧪 CRÉATION DEMANDE DEBUG CONDUCTEUR");
 
-      console.log(
-        "========================================"
-      );
+      const localDriver = await getUser();
 
-      console.log(
-        "🧪 CRÉATION DEMANDE DEBUG CONDUCTEUR"
-      );
-
-      // =================================================
-      // 1. RÉCUPÉRER LE CONDUCTEUR CONNECTÉ
-      // =================================================
-
-      const driver = await getUser();
-
-      if (!driver?.userId) {
-
-        Alert.alert(
-          "Erreur",
-          "Conducteur connecté introuvable."
-        );
-
+      if (!localDriver?.userId) {
+        console.log("❌ Conducteur connecté introuvable");
+        Alert.alert("Erreur", "Conducteur connecté introuvable.");
         return;
       }
 
-      console.log(
-        "🚗 Conducteur debug :",
-        driver.userId
-      );
+      console.log("🚗 Conducteur debug :", localDriver.userId);
 
-      // =================================================
-      // 2. COORDONNÉES DEBUG
-      // =================================================
+      const driverRef = doc(db, "users", localDriver.userId);
+      const driverSnapshot = await getDoc(driverRef);
 
- const pickup = {
-  latitude: 13.4300,
-  longitude: -6.2600,
-  address: "Position debug du passager",
-};
+      if (!driverSnapshot.exists()) {
+        console.log("❌ Conducteur introuvable dans Firestore");
+        Alert.alert("Erreur", "Conducteur introuvable dans Firestore.");
+        return;
+      }
 
-      const destination = {
-        latitude: 13.4322042,
-        longitude: -6.2773017,
-        address:
-          "API Ségou, Avenue de l'An 2000",
-      };
+      const driver = driverSnapshot.data();
 
-      // =================================================
-      // 3. CRÉER UNE FAUSSE COURSE
-      // =================================================
+      console.log("🔎 État conducteur :", {
+        userId: driver.userId,
+        name: driver.name,
+        isOnline: driver.isOnline,
+        availability: driver.availability,
+      });
 
-      const rideRef = await addDoc(
-        collection(
-          db,
-          "rides"
-        ),
+      if (driver.isOnline !== true) {
+        console.log("⛔ DEMANDE DEBUG REFUSÉE : conducteur hors ligne");
+        Alert.alert(
+          "Conducteur hors ligne",
+          "Vous devez être en ligne pour recevoir une demande de course."
+        );
+        return;
+      }
+
+      if (driver.availability && driver.availability !== "available") {
+        console.log("⛔ DEMANDE DEBUG REFUSÉE : conducteur indisponible");
+        console.log("🚗 availability =", driver.availability);
+
+        Alert.alert(
+          "Conducteur indisponible",
+          "Le conducteur n'est actuellement pas disponible pour une nouvelle course."
+        );
+        return;
+      }
+
+      const rideRef = await addDoc(collection(db, "rides"), {
+        passengerId: "DEBUG_PASSENGER",
+        passengerName: "Passager Debug",
+        passengerPhone: "70000000",
+
+        driverId: null,
+        driverName: null,
+        driverPhone: null,
+
+        pickup: {
+          address: "Position debug du passager",
+          latitude: 13.432,
+          longitude: -6.263,
+        },
+
+        destination: {
+          address: "API Ségou, Avenue de l'An 2000",
+          latitude: 13.4322042,
+          longitude: -6.2773017,
+        },
+
+        estimatedDistance: 2.2,
+        estimatedDuration: 3,
+        estimatedPrice: 500,
+
+        vehicleType: driver.vehicleType ?? "moto",
+
+        paymentMethod: "Espèces",
+        paymentStatus: "pending",
+
+        searchMode: "broadcast",
+        status: "searching",
+
+        createdAt: serverTimestamp(),
+        acceptedAt: null,
+        startedAt: null,
+        completedAt: null,
+        cancelledAt: null,
+      });
+
+      console.log("✅ Course debug créée :", rideRef.id);
+
+      const requestRef = await addDoc(
+        collection(db, "ride_requests"),
         {
-          passengerId:
-            "DEBUG_PASSENGER",
+          rideId: rideRef.id,
 
-          passengerName:
-            "Passager Debug",
+          driverId: driver.userId,
+          driverName: driver.name ?? null,
+          driverPhone: driver.phone ?? null,
+          driverVehicleType: driver.vehicleType ?? null,
+          driverLatitude: driver.latitude ?? null,
+          driverLongitude: driver.longitude ?? null,
 
-          passengerPhone:
-            "70000000",
+          passengerId: "DEBUG_PASSENGER",
+          passengerName: "Passager Debug",
+          passengerPhone: "70000000",
 
-          driverId:
-            null,
+          passengerLocation: {
+            latitude: 13.432,
+            longitude: -6.263,
+          },
 
-          driverName:
-            null,
+          pickup: {
+            address: "Position debug du passager",
+            latitude: 13.432,
+            longitude: -6.263,
+          },
 
-          driverPhone:
-            null,
+          destination: {
+            address: "API Ségou, Avenue de l'An 2000",
+            latitude: 13.4322042,
+            longitude: -6.2773017,
+          },
 
-          driverVehicleType:
-            null,
+          estimatedDistance: 2.2,
+          estimatedDuration: 3,
+          estimatedPrice: 500,
 
-          driverDistance:
-            null,
+          vehicleType: driver.vehicleType ?? "moto",
 
-          pickup,
+          searchMode: "broadcast",
+          status: "pending",
 
-          destination,
+          attemptedDrivers: [driver.userId],
 
-          estimatedDistance:
-            2.2,
-
-          estimatedDuration:
-            3,
-
-          estimatedPrice:
-            500,
-
-          vehicleType:
-            driver.vehicleType ??
-            "moto",
-
-          status:
-            "searching",
-
-          createdAt:
-            serverTimestamp(),
-
-          acceptedAt:
-            null,
-
-          driverArrivingAt:
-            null,
-
-          arrivedAt:
-            null,
-
-          startedAt:
-            null,
-
-          completedAt:
-            null,
-
-          cancelledAt:
-            null,
-
-          searchEndedAt:
-            null,
-
-          paymentStatus:
-            "pending",
-
-          paymentMethod:
-            "Espèces",
-
-          ratingSubmitted:
-            false,
-
-          attemptedDrivers:
-            [driver.userId],
-
-          contactedDrivers:
-            [driver.userId],
-
-          searchMode:
-            "broadcast",
-
-          debug:
-            true,
+          createdAt: serverTimestamp(),
+          acceptedAt: null,
+          timeoutAt: null,
+          respondedAt: null,
+          cancelledAt: null,
         }
       );
 
-      console.log(
-        "✅ Course debug créée :",
-        rideRef.id
+      console.log("📩 Demande debug créée :", requestRef.id);
+      console.log("⏱️ Le conducteur dispose maintenant de 60 secondes.");
+      console.log("========================================");
+    } catch (error) {
+      console.error("❌ Erreur création demande debug :", error);
+
+      Alert.alert(
+        "Erreur",
+        "Impossible de créer la demande de test."
       );
+    }
+  };
 
-      // =================================================
-      // 4. CRÉER LA DEMANDE POUR CE CONDUCTEUR
-      // =================================================
+  const resetDriverTest = async () => {
+    try {
+      console.log("========================================");
+      console.log("🧹 RÉINITIALISATION TEST CONDUCTEUR");
 
-      const requestRef =
-        await addDoc(
-          collection(
-            db,
-            "ride_requests"
-          ),
-          {
-            rideId:
-              rideRef.id,
+      const localDriver = await getUser();
 
-            driverId:
-              driver.userId,
+      if (!localDriver?.userId) {
+        Alert.alert("Erreur", "Conducteur connecté introuvable.");
+        return;
+      }
 
-            driverName:
-              driver.name ??
-              "Conducteur Debug",
+      const driverId = String(localDriver.userId);
+      const driverRef = doc(db, "users", driverId);
 
-            driverVehicleType:
-              driver.vehicleType ??
-              "moto",
+      const driverSnapshot = await getDoc(driverRef);
 
-            driverDistance:
-              500,
+      if (!driverSnapshot.exists()) {
+        Alert.alert("Erreur", "Conducteur introuvable dans Firestore.");
+        return;
+      }
 
-            driverLatitude:
-              driver.latitude ??
-              13.430972,
+      const driver = driverSnapshot.data();
 
-            driverLongitude:
-              driver.longitude ??
-              -6.26127,
+      // Arrêter une éventuelle simulation de déplacement.
+      stopDriverMovement(driverId);
 
-            driverPhone:
-              driver.phone ??
-              "70000000",
-
-            passengerId:
-              "DEBUG_PASSENGER",
-
-            passengerName:
-              "Passager Debug",
-
-            passengerPhone:
-              "70000000",
-
-            passengerLocation:
-              pickup,
-
-            pickup,
-
-            destination,
-
-            estimatedDistance:
-              2.2,
-
-            estimatedDuration:
-              3,
-
-            estimatedPrice:
-              500,
-
-            vehicleType:
-              driver.vehicleType ??
-              "moto",
-
-            searchMode:
-              "broadcast",
-
-            status:
-              "pending",
-
-            createdAt:
-              serverTimestamp(),
-
-            acceptedAt:
-              null,
-
-            timeoutAt:
-              null,
-
-            respondedAt:
-              null,
-
-            cancelledAt:
-              null,
-
-            debug:
-              true,
-          }
+      // ----------------------------------------------------------
+      // 1. Annuler la course actuellement liée au conducteur
+      // ----------------------------------------------------------
+      if (driver.currentRideId) {
+        const currentRideRef = doc(
+          db,
+          "rides",
+          String(driver.currentRideId)
         );
 
-      console.log(
-        "✅ Demande debug créée :",
-        requestRef.id
+        const currentRideSnapshot = await getDoc(currentRideRef);
+
+        if (currentRideSnapshot.exists()) {
+          const currentRide = currentRideSnapshot.data();
+
+          if (
+            currentRide.status !== "completed" &&
+            currentRide.status !== "cancelled"
+          ) {
+            await updateDoc(currentRideRef, {
+              status: "cancelled",
+              cancelledAt: serverTimestamp(),
+            });
+
+            console.log(
+              "🧹 Course actuelle annulée :",
+              driver.currentRideId
+            );
+          }
+        }
+      }
+
+      // ----------------------------------------------------------
+      // 2. Annuler toutes les demandes encore pending
+      //    de ce conducteur
+      // ----------------------------------------------------------
+      const pendingQuery = query(
+        collection(db, "ride_requests"),
+        where("driverId", "==", driverId),
+        where("status", "==", "pending")
       );
 
-      console.log(
-        "⏱️ Le conducteur dispose maintenant de 60 secondes."
-      );
+      const pendingSnapshot = await getDocs(pendingQuery);
+
+      if (!pendingSnapshot.empty) {
+        const batch = writeBatch(db);
+
+        pendingSnapshot.docs.forEach((requestDoc) => {
+          batch.update(requestDoc.ref, {
+            status: "cancelled",
+            cancelledAt: serverTimestamp(),
+            respondedAt: serverTimestamp(),
+          });
+        });
+
+        await batch.commit();
+      }
 
       console.log(
-        "========================================"
+        "🧹 Demandes pending annulées :",
+        pendingSnapshot.size
+      );
+
+      // ----------------------------------------------------------
+      // 3. Libérer le conducteur
+      // ----------------------------------------------------------
+      await updateDoc(driverRef, {
+        availability: "available",
+        currentRideId: null,
+      });
+
+      console.log(
+        "🟢 Conducteur remis disponible :",
+        driverId
       );
 
       Alert.alert(
-        "Demande de test créée ✅",
-        "La demande va apparaître sur le tableau de bord conducteur."
+        "Test réinitialisé",
+        "Le conducteur est maintenant disponible et les anciennes demandes de test ont été annulées."
       );
 
+      console.log("========================================");
     } catch (error) {
-
       console.error(
-        "❌ Erreur demande debug :",
+        "❌ Erreur réinitialisation conducteur :",
         error
       );
 
       Alert.alert(
         "Erreur",
-        error?.message ??
-        "Impossible de créer la demande debug."
+        "Impossible de réinitialiser le test."
       );
-
     }
-
   };
 
   return (
-
-    <TouchableOpacity
-      style={styles.button}
-      onPress={createDebugRequest}
-      activeOpacity={0.8}
-    >
-
-      <Text
-        style={styles.text}
+    <View style={styles.container}>
+      <TouchableOpacity
+        style={styles.testButton}
+        onPress={simulateRideRequest}
       >
-        🧪 TESTER UNE DEMANDE CONDUCTEUR
-      </Text>
+        <Text style={styles.testText}>
+          🔧 TESTER UNE DEMANDE CONDUCTEUR
+        </Text>
+      </TouchableOpacity>
 
-    </TouchableOpacity>
-
+      <TouchableOpacity
+        style={styles.resetButton}
+        onPress={resetDriverTest}
+      >
+        <Text style={styles.resetText}>
+          🧹 RÉINITIALISER LE TEST CONDUCTEUR
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
-
 }
 
-const styles =
-  StyleSheet.create({
+const styles = StyleSheet.create({
+  container: {
+    marginTop: 20,
+  },
 
-    button: {
-      backgroundColor:
-        "#FF9800",
+  testButton: {
+    backgroundColor: "#B87500",
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-      height: 52,
+  testText: {
+    color: "#FFF",
+    fontWeight: "bold",
+    fontSize: 15,
+    textAlign: "center",
+  },
 
-      borderRadius: 12,
+  resetButton: {
+    backgroundColor: "#E53935",
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-      justifyContent:
-        "center",
-
-      alignItems:
-        "center",
-
-      marginTop: 15,
-
-      paddingHorizontal: 10,
-    },
-
-    text: {
-      color: "#FFFFFF",
-
-      fontSize: 14,
-
-      fontWeight: "800",
-
-    },
-
-  });
+  resetText: {
+    color: "#FFF",
+    fontWeight: "bold",
+    fontSize: 14,
+    textAlign: "center",
+  },
+});
