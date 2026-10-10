@@ -10,6 +10,7 @@ export default function DriverRideMap({
   destinationLocation,
   driverId,
   showDriverRoute = false,
+  driverArrived = false,
   startDestinationRoute = false,
   onRouteInfo,
   onDriverSelected,
@@ -55,7 +56,11 @@ export default function DriverRideMap({
       latitude,
       longitude,
     };
-  }, [passengerLocation]);
+  }, [
+  passengerLocation?.latitude,
+  passengerLocation?.longitude,
+  passengerLocation?.address,
+]);
 
   const normalizedDestination = useMemo(() => {
     if (!destinationLocation) return null;
@@ -72,7 +77,11 @@ export default function DriverRideMap({
       latitude,
       longitude,
     };
-  }, [destinationLocation]);
+  }, [
+  destinationLocation?.latitude,
+  destinationLocation?.longitude,
+  destinationLocation?.address,
+]);
 
   useEffect(() => {
     if (!normalizedDriver) return;
@@ -134,6 +143,7 @@ export default function DriverRideMap({
         onDriverSelected={onDriverSelected}
         onRouteInfo={onRouteInfo}
         showDriverRoute={showDriverRoute}
+        driverArrived={driverArrived}
         startDestinationRoute={startDestinationRoute}
         destinationLocation={normalizedDestination}
       />

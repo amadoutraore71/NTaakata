@@ -1,7 +1,7 @@
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 export default function LeafletMap({
   html,
   mode = "tracking",
@@ -10,7 +10,6 @@ export default function LeafletMap({
   onDriverSelected,
   onRouteInfo,
   showDriverRoute = false,
-  driverArrived = false,
   startDestinationRoute = false,
   destinationLocation = null,
 }) {
@@ -23,28 +22,6 @@ export default function LeafletMap({
   const destinationSentRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
-  const webViewSource = useMemo(() => ({ html }), [html]);
-
-  // Les tableaux/objets sont souvent recréés à chaque rendu parent.
-  // On stabilise leur référence tant que leurs données sérialisées ne changent pas,
-  // afin de ne pas renvoyer inutilement des messages à la carte.
-  const driversSignature = JSON.stringify(Array.isArray(drivers) ? drivers : []);
-  const stableDrivers = useMemo(
-    () => (Array.isArray(drivers) ? drivers : []),
-    [driversSignature]
-  );
-
-  const searchingDriverSignature = JSON.stringify(searchingDriver || null);
-  const stableSearchingDriver = useMemo(
-    () => searchingDriver || null,
-    [searchingDriverSignature]
-  );
-
-  const destinationSignature = JSON.stringify(destinationLocation || null);
-  const stableDestination = useMemo(
-    () => destinationLocation,
-    [destinationSignature]
-  );
   useEffect(() => {
     htmlRef.current = typeof html === "string" ? html : "";
     readyRef.current = false;
@@ -111,65 +88,59 @@ export default function LeafletMap({
     if (mode === "drivers") {
       sendMessage({
         type: "drivers_update",
-        drivers: stableDrivers,
+        drivers: Array.isArray(drivers) ? drivers : [],
       });
     }
 
-    if (mode === "tracking" && stableDrivers[0]) {
+    if (mode === "tracking" && drivers?.[0]) {
       sendMessage({
         type: "driver_position",
-        driver: stableDrivers[0],
+        driver: drivers[0],
       });
     }
-  }, [mapReady, mode, stableDrivers, sendMessage]);
+  }, [mapReady, mode, drivers, sendMessage]);
 
   useEffect(() => {
     if (!mapReady || mode !== "drivers") return;
 
     sendMessage({
       type: "searching_driver",
-      driver: stableSearchingDriver || stableDrivers[0] || null,
+      driver: searchingDriver || drivers?.[0] || null,
     });
-  }, [
-    mapReady,
-    mode,
-    stableSearchingDriver,
-    stableDrivers,
-    sendMessage,
-  ]);
+  }, [mapReady, mode, searchingDriver, drivers, sendMessage]);
 
   useEffect(() => {
     if (!mapReady || mode !== "tracking") return;
 
-    if (showDriverRoute && stableDrivers[0] && !pickupSentRef.current) {
+    if (showDriverRoute && drivers?.[0] && !pickupSentRef.current) {
       pickupSentRef.current = true;
 
       sendMessage({
         type: "driver_route",
-        driver: stableDrivers[0],
+        driver: drivers[0],
       });
     }
 
     if (!showDriverRoute && pickupSentRef.current) {
       sendMessage({ type: "stop_routes" });
     }
-  }, [mapReady, mode, showDriverRoute, stableDrivers, sendMessage]);
+  }, [mapReady, mode, showDriverRoute, drivers, sendMessage]);
 
   useEffect(() => {
     if (!mapReady || mode !== "tracking") return;
 
     if (
       startDestinationRoute &&
-      stableDrivers[0] &&
-      stableDestination &&
+      drivers?.[0] &&
+      destinationLocation &&
       !destinationSentRef.current
     ) {
       destinationSentRef.current = true;
 
       sendMessage({
         type: "start_destination_route",
-        driver: stableDrivers[0],
-        destination: stableDestination,
+        driver: drivers[0],
+        destination: destinationLocation,
       });
     }
 
@@ -181,16 +152,10 @@ export default function LeafletMap({
     mapReady,
     mode,
     startDestinationRoute,
-    stableDestination,
-    stableDrivers,
+    destinationLocation,
+    drivers,
     sendMessage,
   ]);
-
-  useEffect(() => {
-    if (!mapReady || mode !== "tracking" || !driverArrived) return;
-
-    sendMessage({ type: "driver_arrived" });
-  }, [mapReady, mode, driverArrived, sendMessage]);
 
   const handleMessage = useCallback(
     (event) => {
@@ -270,7 +235,7 @@ export default function LeafletMap({
     <View style={styles.container}>
       <WebView
         ref={webViewRef}
-        source={webViewSource}
+        source={{ html }}
         originWhitelist={["*"]}
         javaScriptEnabled
         domStorageEnabled

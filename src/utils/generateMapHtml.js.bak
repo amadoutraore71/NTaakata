@@ -79,12 +79,10 @@ let searchLineLayer=null;
 let pickupRouteLayer=null;
 let destinationRouteLayer=null;
 let pickupRoutePoints=[];
-let pickupRouteGeneration=0;
 let destinationRoutePoints=[];
 let pickupRouteActive=false;
 let destinationRouteActive=false;
 let routeRequestRunning=false;
-let pendingPickupDriver=null;
 let destinationRequestRunning=false;
 let searchingDriverId=null;
 const ARRIVAL_THRESHOLD_METERS=25;
@@ -127,122 +125,22 @@ function showDrivers(list,fit){
   debug("Conducteurs affichés : "+Object.keys(driverMarkers).length);
   if(fit&&list.length){const bounds=L.latLngBounds([point(PASSENGER)]);list.forEach(function(d){if(valid(d))bounds.extend(point(d));});if(bounds.isValid())map.fitBounds(bounds,{padding:[60,60],maxZoom:16});}
 }
-
-function animateMarker(marker, pos) {
-  if (
-    !marker ||
-    !Array.isArray(pos) ||
-    pos.length < 2 ||
-    !Number.isFinite(Number(pos[0])) ||
-    !Number.isFinite(Number(pos[1]))
-  ) {
-    return;
-  }
-
-  if (marker._frame) {
-    cancelAnimationFrame(marker._frame);
-    marker._frame = null;
-  }
-
-  const start = marker.getLatLng();
-  const end = L.latLng(Number(pos[0]), Number(pos[1]));
-  const startedAt = performance.now();
-  const duration = 450;
-
-  function frame(now) {
-    const progress = Math.min((now - startedAt) / duration, 1);
-
-    const lat = start.lat + (end.lat - start.lat) * progress;
-    const lng = start.lng + (end.lng - start.lng) * progress;
-    const currentPosition = [lat, lng];
-
-    marker.setLatLng(currentPosition);
-
-    // Faire progresser la route pendant le déplacement du marqueur.
-    if (pickupRouteActive && !destinationRouteActive) {
-      trimRoute(
-        pickupRouteLayer,
-        pickupRoutePoints,
-        currentPosition,
-        "pickup"
-      );
-    } else if (destinationRouteActive) {
-      trimRoute(
-        destinationRouteLayer,
-        destinationRoutePoints,
-        currentPosition,
-        "destination"
-      );
-    }
-
-    if (progress < 1) {
-      marker._frame = requestAnimationFrame(frame);
-    } else {
-      marker.setLatLng(end);
-      marker._frame = null;
-    }
-  }
-
-  marker._frame = requestAnimationFrame(frame);
+function animateMarker(marker,pos){
+  if(!marker)return;
+  if(marker._frame)cancelAnimationFrame(marker._frame);
+  const s=marker.getLatLng(),e=L.latLng(pos[0],pos[1]),start=performance.now(),duration=450;
+  function frame(t){const p=Math.min((t-start)/duration,1);marker.setLatLng([s.lat+(e.lat-s.lat)*p,s.lng+(e.lng-s.lng)*p]);if(p<1)marker._frame=requestAnimationFrame(frame);else marker._frame=null;}
+  marker._frame=requestAnimationFrame(frame);
 }
-
 function removeLayer(layer){if(layer){try{if(map.hasLayer(layer))map.removeLayer(layer);}catch(e){}}}
-
-function trimRoute(layer, points, pos, arrivalType) {
-  if (!layer || !Array.isArray(points) || points.length < 2) {
-    return;
-  }
-
-  // Vérifier l'arrivée au véritable point final de la route,
-  // et non la proximité d'un point quelconque sur le trajet.
-  const endpoint = points[points.length - 1];
-
-  if (map.distance(pos, endpoint) <= ARRIVAL_THRESHOLD_METERS) {
-    removeLayer(layer);
-
-    if (arrivalType === "pickup") {
-      pickupRouteActive = false;
-      pickupRoutePoints = [];
-      pickupRouteLayer = null;
-      hidePassenger();
-
-      debug("Conducteur arrivé au passager : route pickup terminée");
-    } else {
-      destinationRouteActive = false;
-      destinationRoutePoints = [];
-      destinationRouteLayer = null;
-
-      debug("Conducteur arrivé à destination : route destination terminée");
-    }
-
-    return;
-  }
-
-  // L'index ne peut avancer que dans le sens du trajet.
-  const previousIndex = Number(layer._progressIndex) || 0;
-  let nearestIndex = previousIndex;
-  let bestDistance = Infinity;
-
-  for (let i = previousIndex; i < points.length; i++) {
-    const currentDistance = map.distance(pos, points[i]);
-
-    if (currentDistance < bestDistance) {
-      bestDistance = currentDistance;
-      nearestIndex = i;
-    }
-  }
-
-  layer._progressIndex = Math.max(previousIndex, nearestIndex);
-
-  // Masquer la partie déjà parcourue et conserver la suite du trajet.
-  const nextIndex = Math.min(layer._progressIndex + 1, points.length - 1);
-  const remainingPoints = [pos].concat(points.slice(nextIndex));
-
-  if (remainingPoints.length >= 2) {
-    layer.setLatLngs(remainingPoints);
-  }
+function trimRoute(layer,points,pos,arrivalType){
+  if(!layer||!Array.isArray(points)||points.length<2)return;
+  let nearest=0,best=Infinity;
+  for(let i=0;i<points.length;i++){const d=map.distance(pos,points[i]);if(d<best){best=d;nearest=i;}}
+  if(best<=ARRIVAL_THRESHOLD_METERS){removeLayer(layer);if(arrivalType==="pickup"){pickupRouteActive=false;pickupRoutePoints=[];hidePassenger();debug("Conducteur arrivé au passager : route pickup terminée");}else{destinationRouteActive=false;destinationRoutePoints=[];debug("Conducteur arrivé à destination : route destination terminée");}return;}
+  const remaining=[pos].concat(points.slice(Math.min(nearest+1,points.length-1)));
+  layer.setLatLngs(remaining);
 }
-
 async function fetchRoute(from,to){
   const url="https://router.project-osrm.org/route/v1/driving/"+from[1]+","+from[0]+";"+to[1]+","+to[0]+"?overview=full&geometries=geojson";
   const response=await fetch(url); if(!response.ok)throw new Error("OSRM HTTP "+response.status);
@@ -250,22 +148,10 @@ async function fetchRoute(from,to){
   return data.routes[0];
 }
 async function startPickupRoute(d){
-  if(!valid(d)||destinationRouteActive)return;
-
-  // Si le pont React Native redemande la route pendant le premier calcul,
-  // garder la dernière demande au lieu de la perdre.
-  if(routeRequestRunning){
-    pendingPickupDriver=d;
-    return;
-  }
-
-  if(pickupRouteActive&&pickupRouteLayer)return;
-
+  if(!valid(d)||routeRequestRunning||destinationRouteActive)return;
   routeRequestRunning=true;
-  const generation=pickupRouteGeneration;
   try{
     const route=await fetchRoute(point(d),point(PASSENGER));
-    if(generation!==pickupRouteGeneration||destinationRouteActive)return;
     pickupRoutePoints=route.geometry.coordinates.map(function(p){return [p[1],p[0]];});
     pickupRoutePoints.unshift(point(d));
     pickupRoutePoints.push(point(PASSENGER));
@@ -275,25 +161,9 @@ async function startPickupRoute(d){
     pickupRouteLayer.bringToFront();
     send("route_info",{distance:route.distance,duration:route.duration,eta:Date.now()+route.duration*1000});
     debug("Route conducteur → passager créée");
-  }catch(e){
-    send("webview_js_error",{message:"Route pickup : "+String(e)});
-  }finally{
-    routeRequestRunning=false;
-    const pending=pendingPickupDriver;
-    pendingPickupDriver=null;
-    if(pending&&!pickupRouteActive&&!destinationRouteActive){
-      Promise.resolve().then(function(){startPickupRoute(pending);});
-    }
-  }
+  }catch(e){send("webview_js_error",{message:"Route pickup : "+String(e)});}finally{routeRequestRunning=false;}
 }
-function stopPickupRoute(){
-  pickupRouteGeneration++;
-  pendingPickupDriver=null;
-  pickupRouteActive=false;
-  pickupRoutePoints=[];
-  removeLayer(pickupRouteLayer);
-  pickupRouteLayer=null;
-}
+function stopPickupRoute(){pickupRouteActive=false;pickupRoutePoints=[];removeLayer(pickupRouteLayer);pickupRouteLayer=null;}
 async function startDestinationRoute(d,dest){
   if(!valid(d)||!valid(dest)||destinationRequestRunning)return;
   destinationRequestRunning=true;
@@ -313,56 +183,13 @@ async function startDestinationRoute(d,dest){
   }catch(e){send("webview_js_error",{message:"Route destination : "+String(e)});}finally{destinationRequestRunning=false;}
 }
 function stopDestinationRoute(){destinationRouteActive=false;destinationRoutePoints=[];removeLayer(destinationRouteLayer);destinationRouteLayer=null;}
-
-function updateDriverPosition(d) {
-  if (!valid(d)) {
-    return;
-  }
-
-  const id = idOf(d);
-
-  if (!id || id === "unknown") {
-    return;
-  }
-
-  let marker = driverMarkers[id];
-
-  if (!marker) {
-    showDrivers([d], false);
-    marker = driverMarkers[id];
-
-    if (!marker) {
-      return;
-    }
-
-    marker._driverData = d;
-
-    // Initialiser la progression si la route existe déjà.
-    if (pickupRouteActive && !destinationRouteActive) {
-      trimRoute(
-        pickupRouteLayer,
-        pickupRoutePoints,
-        point(d),
-        "pickup"
-      );
-    } else if (destinationRouteActive) {
-      trimRoute(
-        destinationRouteLayer,
-        destinationRoutePoints,
-        point(d),
-        "destination"
-      );
-    }
-
-    return;
-  }
-
-  marker._driverData = d;
-
-  // La ligne sera mise à jour à chaque image de l'animation.
-  animateMarker(marker, point(d));
+function updateDriverPosition(d){
+  if(!valid(d))return;
+  const id=idOf(d); if(!id||id==="unknown")return;
+  if(!driverMarkers[id])showDrivers([d],false); else {driverMarkers[id]._driverData=d;animateMarker(driverMarkers[id],point(d));}
+  if(pickupRouteActive&&!destinationRouteActive){trimRoute(pickupRouteLayer,pickupRoutePoints,point(d),"pickup");}
+  if(destinationRouteActive){trimRoute(destinationRouteLayer,destinationRoutePoints,point(d),"destination");}
 }
-
 function showAcceptedDriver(d){
   if(!d)return;
   clearSearchLine();
@@ -396,13 +223,6 @@ window.__ntaakataReceiveMessage=function(message){
     }
     if(data.type==="stop_routes"){
       stopPickupRoute();clearSearchLine();return;
-    }
-    if(data.type==="driver_arrived"){
-      stopPickupRoute();
-      clearSearchLine();
-      hidePassenger();
-      debug("Statut conducteur arrivé reçu : icône passager masquée");
-      return;
     }
     if(data.type==="start_destination_route"){
       if(MODE!=="tracking")return;

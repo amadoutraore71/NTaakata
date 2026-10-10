@@ -313,25 +313,11 @@ export default function RideStatus() {
               });
 
               if (driver?.userId) {
-              
-const driverRef = doc(db, "users", driver.userId);
-
-await updateDoc(driverRef, {
-  availability: "available",
-  currentRideId: null,
-});
-
-const verification = await getDoc(driverRef);
-
-if (verification.exists()) {
-  const freshDriver = verification.data();
-
-  console.log("🔎 Vérification après fin de course :", {
-    availability: freshDriver.availability,
-    currentRideId: freshDriver.currentRideId,
-  });
-}
-
+                await updateDoc(doc(db, "users", driver.userId), {
+                  availability: "available",
+                  currentRideId: null,
+                });
+                console.log("✅ Conducteur libéré après fin de course");
               }
 
               console.log("✅ Course terminée avec succès");
@@ -673,11 +659,9 @@ if (verification.exists()) {
             destinationLocation={ride.destination ?? null}
             driverId={driver?.userId}
             tripType={ride.status === "started" ? "destination" : "pickup"}
-           showDriverRoute={ride.status === "driver_arriving"}
-            driverArrived={
-              ride.status === "driver_arrived" ||
-              ride.status === "started" ||
-              ride.status === "completed"
+            showDriverRoute={
+              ride.status === "driver_assigned" ||
+              ride.status === "driver_arriving"
             }
             startDriverRoute={ride.status === "driver_arriving"}
             startDestinationRoute={ride.status === "started"}

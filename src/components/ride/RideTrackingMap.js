@@ -20,6 +20,7 @@ export default function RideTrackingMap({
   onDriverSelected,
   onRouteInfo,
   showDriverRoute = false,
+  driverArrived = false,
   startDestinationRoute = false,
   destinationLocation = null,
 }) {
@@ -50,7 +51,23 @@ export default function RideTrackingMap({
     const longitude = Number(passengerLocation.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
     return { ...passengerLocation, latitude, longitude };
-  }, [passengerLocation]);
+  }, [
+    passengerLocation?.latitude,
+    passengerLocation?.longitude,
+    passengerLocation?.address,
+  ]);
+
+  const safeDestination = useMemo(() => {
+    if (!destinationLocation) return null;
+    const latitude = Number(destinationLocation.latitude);
+    const longitude = Number(destinationLocation.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return { ...destinationLocation, latitude, longitude };
+  }, [
+    destinationLocation?.latitude,
+    destinationLocation?.longitude,
+    destinationLocation?.address,
+  ]);
 
   const safeDrivers = useMemo(() => (Array.isArray(drivers) ? drivers : [])
     .map((d) => ({
@@ -98,9 +115,17 @@ export default function RideTrackingMap({
       drivers: mode === "tracking" ? [initialDriver] : safeDrivers,
       searchingDriver: mode === "drivers" ? searchingDriver : null,
       icons,
-      destinationLocation,
+      destinationLocation: safeDestination,
     });
-  }, [icons, safePassenger, mode, initialDriver, safeDrivers, searchingDriver, destinationLocation]);
+  }, [
+    icons,
+    safePassenger,
+    mode,
+    initialDriver,
+    mode === "drivers" ? safeDrivers : null,
+    mode === "drivers" ? searchingDriver : null,
+    safeDestination,
+  ]);
 
   if (!safePassenger) return <View style={styles.empty} />;
 
@@ -114,8 +139,9 @@ export default function RideTrackingMap({
         onDriverSelected={onDriverSelected}
         onRouteInfo={onRouteInfo}
         showDriverRoute={showDriverRoute}
+        driverArrived={driverArrived}
         startDestinationRoute={startDestinationRoute}
-        destinationLocation={destinationLocation}
+        destinationLocation={safeDestination}
       />
     </View>
   );

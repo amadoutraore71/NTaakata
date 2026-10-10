@@ -6,13 +6,14 @@ import {
 
 import { db } from "../firebase/config";
 
-/**
+/**  
  * Conducteur disponible
  */
 export async function setDriverAvailable(driverId) {
   await updateDoc(doc(db, "users", driverId), {
     isOnline: true,
     availability: "available",
+    currentRideId: null,
     updatedAt: serverTimestamp(),
   });
 }

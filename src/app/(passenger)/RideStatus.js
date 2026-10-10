@@ -222,7 +222,7 @@ export default function RideStatus() {
 
     "driver_arriving",
 
-    "arrived",
+    "driver_arrived",
 
     "started",
 
@@ -1280,7 +1280,15 @@ export default function RideStatus() {
 
             }
 
+            driverArrived={
 
+              ride.status === "driver_arrived" ||
+
+              ride.status === "started" ||
+
+              ride.status === "completed"
+
+            }
 
             startDestinationRoute={
 
