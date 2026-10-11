@@ -28,50 +28,104 @@ export default function DestinationSearch({
 }) {
   const [text, setText] = useState("");
   const [results, setResults] = useState([]);
-  const [recentDestinations, setRecentDestinations] =
-    useState([]);
-
+  const [recentDestinations, setRecentDestinations] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // Indique qu'une destination vient d'être sélectionnée
-  const [destinationSelected, setDestinationSelected] =
-    useState(false);
+  const [destinationSelected, setDestinationSelected] = useState(false);
 
   const timer = useRef(null);
-
-  // Permet d'ignorer une ancienne recherche
-  // qui terminerait après une nouvelle recherche
   const searchId = useRef(0);
 
   // ============================================================
-  // DESTINATIONS RÉCENTES
+  // NORMALISATION DES COORDONNÉES
   // ============================================================
 
-  useEffect(() => {
-    if (userId) {
-      loadRecentDestinations();
-    }
-  }, [userId]);
+  function normalizeLocation(location) {
+    if (!location) return null;
 
-  async function loadRecentDestinations() {
-    try {
-      const data = await getRecentDestinations(userId);
+    const latitude = Number(
+      location.latitude ?? location.lat
+    );
 
-      setRecentDestinations(
-        Array.isArray(data) ? data : []
-      );
-    } catch (error) {
+    const longitude = Number(
+      location.longitude ?? location.lon ?? location.lng
+    );
+
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
       console.log(
-        "Erreur destinations récentes :",
-        error
+        "❌ Coordonnées invalides :",
+        JSON.stringify(location)
       );
-
-      setRecentDestinations([]);
+      return null;
     }
+
+    const address = String(
+      location.address ??
+        location.name ??
+        location.display_name ??
+        ""
+    ).trim();
+
+    return {
+      ...location,
+      latitude,
+      longitude,
+      address,
+      name: location.name ?? address,
+      city: location.city ?? "",
+      region: location.region ?? "",
+      category: location.category ?? location.type ?? "",
+    };
   }
 
   // ============================================================
-  // RECHERCHE
+  // CHARGEMENT DES DESTINATIONS RÉCENTES
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRecentDestinations() {
+      if (!userId) {
+        setRecentDestinations([]);
+        return;
+      }
+
+      try {
+        const data = await getRecentDestinations(userId);
+
+        if (!cancelled) {
+          setRecentDestinations(
+            Array.isArray(data) ? data : []
+          );
+        }
+      } catch (error) {
+        console.log(
+          "❌ Erreur destinations récentes :",
+          error
+        );
+
+        if (!cancelled) {
+          setRecentDestinations([]);
+        }
+      }
+    }
+
+    loadRecentDestinations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // ============================================================
+  // RECHERCHE DES LIEUX
   // ============================================================
 
   useEffect(() => {
@@ -80,52 +134,41 @@ export default function DestinationSearch({
       timer.current = null;
     }
 
-    // Une destination vient d'être sélectionnée
     if (destinationSelected) {
       setResults([]);
       setLoading(false);
-      return;
+      return undefined;
     }
 
     const searchText = text.trim();
 
-    // Moins de 2 caractères :
-    // on affiche les destinations récentes
     if (searchText.length < 2) {
       setResults([]);
       setLoading(false);
-      return;
+      return undefined;
     }
 
     const currentSearchId = ++searchId.current;
 
     timer.current = setTimeout(async () => {
-      try {
-        setLoading(true);
+      setLoading(true);
 
+      try {
         const data = await searchLocations(searchText);
 
-        // Si une autre recherche est plus récente,
-        // on ignore cette réponse
+        // Ignorer une réponse qui appartient à une ancienne recherche.
         if (currentSearchId !== searchId.current) {
           return;
         }
 
-        console.log(
-          "Premier résultat :",
-          JSON.stringify(data?.[0], null, 2)
-        );
-
-        setResults(
-          Array.isArray(data) ? data : []
-        );
+        setResults(Array.isArray(data) ? data : []);
       } catch (error) {
         if (currentSearchId !== searchId.current) {
           return;
         }
 
         console.log(
-          "Erreur recherche destination :",
+          "❌ Erreur recherche destination :",
           error
         );
 
@@ -146,18 +189,14 @@ export default function DestinationSearch({
   }, [text, destinationSelected]);
 
   // ============================================================
-  // SAISIE
+  // SAISIE DANS LE CHAMP
   // ============================================================
 
   const handleTextChange = (value) => {
-    setText(value);
-
-    // L'utilisateur recommence à écrire :
-    // on réactive les suggestions
-    setDestinationSelected(false);
-
-    // Une nouvelle recherche devient prioritaire
     searchId.current += 1;
+
+    setText(value);
+    setDestinationSelected(false);
   };
 
   // ============================================================
@@ -165,54 +204,25 @@ export default function DestinationSearch({
   // ============================================================
 
   async function handleSelect(location) {
-    if (!location) {
+    if (!location) return;
+
+    const selectedLocation = normalizeLocation(location);
+
+    if (!selectedLocation) {
+      console.log(
+        "❌ Impossible de sélectionner ce lieu : coordonnées manquantes."
+      );
       return;
     }
 
-    const selectedLocation = {
-      latitude: Number(location.latitude),
-      longitude: Number(location.longitude),
+    console.log(
+      "📍 Destination sélectionnée :",
+      selectedLocation.address,
+      selectedLocation.latitude,
+      selectedLocation.longitude
+    );
 
-      address:
-        location.address ||
-        location.name ||
-        location.display_name ||
-        "",
-
-      name: location.name || "",
-      city: location.city || "",
-      region: location.region || "",
-      category: location.category || "",
-    };
-
-    // ----------------------------------------------------------
-    // 1. Afficher le lieu sélectionné dans le champ
-    // ----------------------------------------------------------
-
-    setText(selectedLocation.address);
-
-    // ----------------------------------------------------------
-    // 2. Marquer immédiatement comme sélectionné
-    // ----------------------------------------------------------
-
-    setDestinationSelected(true);
-
-    // ----------------------------------------------------------
-    // 3. Supprimer immédiatement les suggestions
-    // ----------------------------------------------------------
-
-    setResults([]);
-
-    // ----------------------------------------------------------
-    // 4. Arrêter le chargement
-    // ----------------------------------------------------------
-
-    setLoading(false);
-
-    // ----------------------------------------------------------
-    // 5. Invalider les anciennes recherches
-    // ----------------------------------------------------------
-
+    // Arrêter immédiatement les recherches en cours.
     searchId.current += 1;
 
     if (timer.current) {
@@ -220,69 +230,92 @@ export default function DestinationSearch({
       timer.current = null;
     }
 
-    // ----------------------------------------------------------
-    // 6. Fermer le clavier
-    // ----------------------------------------------------------
+    // Mettre à jour l'interface.
+    setText(selectedLocation.address);
+    setDestinationSelected(true);
+    setResults([]);
+    setLoading(false);
 
     Keyboard.dismiss();
 
-    // ----------------------------------------------------------
-    // 7. Sauvegarder dans les destinations récentes
-    // ----------------------------------------------------------
-
+    // Transmettre la destination au composant parent sans attendre
+    // la sauvegarde de l'historique.
     try {
-      if (userId) {
+      if (typeof onSelect === "function") {
+        await onSelect(selectedLocation);
+      }
+    } catch (error) {
+      console.log(
+        "❌ Erreur lors du traitement de la destination :",
+        error
+      );
+    }
+
+    // Enregistrer le lieu dans l'historique.
+    if (userId) {
+      try {
         await saveRecentDestination(
           userId,
           selectedLocation
         );
 
-        await loadRecentDestinations();
+        const data = await getRecentDestinations(userId);
+
+        setRecentDestinations(
+          Array.isArray(data) ? data : []
+        );
+      } catch (error) {
+        console.log(
+          "❌ Erreur sauvegarde destination :",
+          error
+        );
       }
-    } catch (error) {
-      console.log(
-        "Erreur sauvegarde destination :",
-        error
-      );
     }
-
-    // ----------------------------------------------------------
-    // 8. Envoyer la destination au parent
-    // ----------------------------------------------------------
-
-    onSelect?.(selectedLocation);
   }
 
   // ============================================================
   // DESTINATIONS À AFFICHER
   // ============================================================
 
-  let displayedResults = [];
-
-  if (!destinationSelected) {
-    if (text.trim().length >= 2) {
-      displayedResults = results || [];
-    } else {
-      displayedResults =
-        recentDestinations || [];
-    }
-  }
+  const displayedResults = destinationSelected
+    ? []
+    : text.trim().length >= 2
+      ? results
+      : recentDestinations;
 
   // ============================================================
   // SUPPRESSION DES DOUBLONS
   // ============================================================
 
   const uniqueResults = displayedResults.filter(
-    (item, index, self) =>
-      index ===
-      self.findIndex(
-        (x) =>
-          x.name === item.name &&
-          Number(x.latitude) ===
-            Number(item.latitude) &&
-          Number(x.longitude) ===
-            Number(item.longitude)
-      )
+    (item, index, all) => {
+      const normalized = normalizeLocation(item);
+
+      // Garder les lieux sans coordonnées visibles afin de ne pas
+      // supprimer silencieusement leur affichage dans l'historique.
+      if (!normalized) {
+        return (
+          all.findIndex(
+            (other) =>
+              String(other.name ?? other.address ?? "") ===
+              String(item.name ?? item.address ?? "")
+          ) === index
+        );
+      }
+
+      return (
+        all.findIndex((other) => {
+          const otherLocation = normalizeLocation(other);
+
+          return (
+            otherLocation &&
+            otherLocation.address === normalized.address &&
+            otherLocation.latitude === normalized.latitude &&
+            otherLocation.longitude === normalized.longitude
+          );
+        }) === index
+      );
+    }
   );
 
   // ============================================================
@@ -291,10 +324,7 @@ export default function DestinationSearch({
 
   return (
     <View style={styles.container}>
-
-      {/* ======================================================
-          CHAMP DE RECHERCHE
-      ====================================================== */}
+      {/* Champ de recherche */}
 
       <View style={styles.inputContainer}>
         <Ionicons
@@ -316,9 +346,7 @@ export default function DestinationSearch({
         />
       </View>
 
-      {/* ======================================================
-          CHARGEMENT
-      ====================================================== */}
+      {/* Indicateur de chargement */}
 
       {loading && !destinationSelected && (
         <View style={styles.loading}>
@@ -329,35 +357,34 @@ export default function DestinationSearch({
         </View>
       )}
 
-      {/* ======================================================
-          LISTE DES DESTINATIONS
-      ====================================================== */}
+      {/* Résultats de recherche et historique */}
 
       {!destinationSelected &&
         uniqueResults.length > 0 && (
           <View style={styles.resultsContainer}>
             {uniqueResults.map((item, index) => {
-              const formatted =
-                formatLocation(item);
+              const normalized = normalizeLocation(item);
+              const formatted = formatLocation(item);
+
+              const title =
+                formatted?.title ||
+                item.name ||
+                item.address ||
+                item.display_name ||
+                "Lieu sans nom";
+
+              const subtitle = formatted?.subtitle || "";
 
               return (
                 <Pressable
-                  key={`${
-                    item.id ||
-                    item.placeId ||
-                    item.name ||
-                    "destination"
-                  }-${index}`}
+                  key={`${item.id ?? item.placeId ?? title}-${index}`}
                   style={({ pressed }) => [
                     styles.item,
                     pressed && styles.itemPressed,
                   ]}
-                  onPress={() =>
-                    handleSelect(item)
-                  }
+                  onPress={() => handleSelect(item)}
                 >
                   <View style={styles.row}>
-
                     <View style={styles.iconContainer}>
                       <Ionicons
                         name="location"
@@ -366,32 +393,22 @@ export default function DestinationSearch({
                       />
                     </View>
 
-                    <View
-                      style={
-                        styles.textContainer
-                      }
-                    >
+                    <View style={styles.textContainer}>
                       <Text
-                        style={
-                          styles.locationName
-                        }
+                        style={styles.locationName}
                         numberOfLines={2}
                       >
-                        {formatted.title}
+                        {title}
                       </Text>
 
-                      {formatted.subtitle ? (
+                      {!!subtitle && (
                         <Text
-                          style={
-                            styles.locationSubtitle
-                          }
+                          style={styles.locationSubtitle}
                           numberOfLines={2}
                         >
-                          {
-                            formatted.subtitle
-                          }
+                          {subtitle}
                         </Text>
-                      ) : null}
+                      )}
                     </View>
 
                     <Ionicons
@@ -399,7 +416,6 @@ export default function DestinationSearch({
                       size={18}
                       color="#9CA3AF"
                     />
-
                   </View>
                 </Pressable>
               );
@@ -410,24 +426,22 @@ export default function DestinationSearch({
   );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 
 const styles = StyleSheet.create({
-container: {
-  width: "100%",
-},
+  container: {
+    width: "100%",
+  },
 
   inputContainer: {
     height: 58,
-
     flexDirection: "row",
-
     alignItems: "center",
-
     borderRadius: 16,
-
     borderWidth: 1,
     borderColor: "#DDDDDD",
-
     backgroundColor: "#FFFFFF",
   },
 
@@ -437,50 +451,30 @@ container: {
 
   input: {
     flex: 1,
-
     height: "100%",
-
     paddingHorizontal: 12,
-
     fontSize: 17,
-
     color: "#111111",
   },
 
-  // ----------------------------------------------------------
-  // CHARGEMENT
-  // ----------------------------------------------------------
-
   loading: {
     paddingVertical: 12,
-
     alignItems: "center",
   },
 
-  // ----------------------------------------------------------
-  // RÉSULTATS
-  // ----------------------------------------------------------
-
   resultsContainer: {
     marginTop: 8,
-
     borderRadius: 14,
-
     overflow: "hidden",
-
     backgroundColor: "#FFFFFF",
-
     borderWidth: 1,
     borderColor: "#EEEEEE",
   },
 
   item: {
     paddingVertical: 14,
-
     paddingHorizontal: 12,
-
     backgroundColor: "#FFFFFF",
-
     borderBottomWidth: 1,
     borderBottomColor: "#EEEEEE",
   },
@@ -491,45 +485,34 @@ container: {
 
   row: {
     flexDirection: "row",
-
     alignItems: "center",
   },
 
   iconContainer: {
     width: 38,
     height: 38,
-
     borderRadius: 19,
-
     alignItems: "center",
     justifyContent: "center",
-
     backgroundColor: "#ECFDF5",
-
     marginRight: 12,
   },
 
   textContainer: {
     flex: 1,
-
     paddingRight: 8,
   },
 
   locationName: {
     fontSize: 16,
-
     fontWeight: "700",
-
     color: "#111827",
   },
 
   locationSubtitle: {
     marginTop: 3,
-
     fontSize: 13,
-
     color: "#6B7280",
-
     lineHeight: 18,
   },
 });

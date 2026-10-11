@@ -1,15 +1,30 @@
 import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system/legacy";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import generateMapHtml from "../../utils/generateMapHtml";
 import LeafletMap from "../LeafletMap";
 
+
 async function loadAsset(moduleRef) {
   const asset = Asset.fromModule(moduleRef);
+
   await asset.downloadAsync();
-  return asset.localUri || asset.uri;
+
+  const uri = asset.localUri || asset.uri;
+
+  if (!uri) {
+    throw new Error("URI de l'image introuvable");
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return `data:image/png;base64,${base64}`;
 }
+
 
 export default function RideTrackingMap({
   mode = "drivers",

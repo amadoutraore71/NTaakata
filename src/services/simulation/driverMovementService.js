@@ -300,20 +300,13 @@ function createRouteSteps(
     );
   }
 
-  if (totalDistance <= 0) {
-  console.log("📍 Distance de la route : 0 m");
-  console.log("📍 Conducteur déjà au point d'arrivée");
-
-  return {
-    steps: [
-      {
-        latitude: points[0].latitude,
-        longitude: points[0].longitude,
-      },
-    ],
-    totalDistance: 0,
-  };
-}
+  if (
+    totalDistance <= 0
+  ) {
+    throw new Error(
+      "La distance de la route est nulle"
+    );
+  }
 
   // ====================================================
   // 3. CRÉATION DES ÉTAPES
@@ -671,6 +664,15 @@ export async function startDriverMovement({
         lastLocationUpdate: new Date(),
       });
 
+      // stopDriverMovement peut être appelé pendant l'écriture Firestore.
+      // Dans ce cas, ne pas continuer l'ancien trajet ni lancer onFinished.
+      if (!isMovementActive()) {
+        console.log(
+          "🛑 Mouvement arrêté pendant l'écriture Firestore ; arrêt immédiat.",
+        );
+        return;
+      }
+
       console.log(
         "🔥 Firestore mis à jour :",
         position,
@@ -688,95 +690,57 @@ export async function startDriverMovement({
       throw error;
     }
 
-   // ==================================================
-// ARRIVÉE
-// ==================================================
+    // ==================================================
+    // ARRIVÉE
+    // ==================================================
 
-if (
-  step ===
-  routeSteps.length - 1
-) {
-  // ------------------------------------------------
-  // VÉRIFIER AVANT L'ARRIVÉE
-  // ------------------------------------------------
+    if (
+      step ===
+      routeSteps.length - 1
+    ) {
+      // ------------------------------------------------
+      // VÉRIFIER AVANT onFinished
+      // ------------------------------------------------
 
-  if (!isMovementActive()) {
-    console.log(
-      "🛑 Déplacement remplacé juste avant l'arrivée."
-    );
+      if (!isMovementActive()) {
+        console.log(
+          "🛑 Déplacement remplacé juste avant l'arrivée.",
+        );
 
-    return;
-  }
-
-  // ------------------------------------------------
-  // FORCER LA POSITION EXACTE D'ARRIVÉE
-  // ------------------------------------------------
-
-  try {
-    await updateDoc(driverRef, {
-      latitude: endLocation.latitude,
-      longitude: endLocation.longitude,
-      lastLocationUpdate: new Date(),
-    });
-
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "📍 CONDUCTEUR ARRIVÉ"
-    );
-
-    console.log(
-      "📍 Position finale exacte :",
-      endLocation
-    );
-
-    console.log(
-      "🔥 Firestore position finale :",
-      {
-        latitude: endLocation.latitude,
-        longitude: endLocation.longitude,
+        return;
       }
-    );
 
-    console.log(
-      "========================================"
-    );
-
-  } catch (error) {
-
-    if (isMovementActive()) {
-      activeMovements.delete(
-        String(driverId)
+      console.log(
+        "========================================",
       );
+
+      console.log(
+        "📍 CONDUCTEUR ARRIVÉ",
+      );
+
+      console.log(
+        "📍 Position finale :",
+        position,
+      );
+
+      console.log(
+        "========================================",
+      );
+
+      // Le mouvement est terminé.
+      activeMovements.delete(
+        String(driverId),
+      );
+
+      if (
+        typeof onFinished ===
+        "function"
+      ) {
+        await onFinished();
+      }
+
+      return;
     }
-
-    console.error(
-      "❌ Erreur position finale conducteur :",
-      error
-    );
-
-    throw error;
-  }
-
-  // ------------------------------------------------
-  // TERMINER LE DÉPLACEMENT
-  // ------------------------------------------------
-
-  activeMovements.delete(
-    String(driverId)
-  );
-
-  if (
-    typeof onFinished ===
-    "function"
-  ) {
-    await onFinished();
-  }
-
-  return;
-}
 
     // ==================================================
     // ATTENTE AVANT LA PROCHAINE POSITION

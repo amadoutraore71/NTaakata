@@ -1,12 +1,8 @@
+
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
-
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import DestinationSearch from "../../components/location/DestinationSearch";
@@ -31,107 +27,157 @@ export default function PassengerHome() {
     stopLocation,
   } = usePassengerLocation();
 
-  const [estimatedDistance, setEstimatedDistance] =
-    useState(0);
-
+  const [estimatedDistance, setEstimatedDistance] = useState(0);
   const [user, setUser] = useState(null);
-
-  const [destination, setDestination] =
-    useState(null);
-
-  const [vehicleType, setVehicleType] =
-    useState("moto");
+  const [destination, setDestination] = useState(null);
+  const [vehicleType, setVehicleType] = useState("moto");
+  const [calculatingRoute, setCalculatingRoute] = useState(false);
 
   const { requestRide } = useRideRequest();
 
-  // ============================================================
-  // CHARGEMENT UTILISATEUR
-  // ============================================================
+  const routeRequestId = useRef(0);
+  const lastRouteKey = useRef(null);
 
+  // Charger l'utilisateur et vérifier une course active.
   useEffect(() => {
+    let mounted = true;
+
+    async function loadUser() {
+      try {
+        const currentUser = await getUser();
+
+        if (!mounted || !currentUser) return;
+
+        setUser(currentUser);
+
+        const activeRide = await getActiveRide(currentUser.userId);
+
+        if (!mounted) return;
+
+        if (activeRide) {
+          router.replace({
+            pathname: "/(passenger)/RideStatus",
+            params: { rideId: activeRide.id },
+          });
+        }
+      } catch (error) {
+        console.log("Erreur chargement utilisateur :", error);
+      }
+    }
+
     loadUser();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const loadUser = async () => {
-    try {
-      const currentUser = await getUser();
+  // Calculer l'itinéraire en arrière-plan.
+  // Aucun message de chargement n'est affiché au passager.
+  useEffect(() => {
+    if (!destination) return;
 
-      if (!currentUser) {
-        return;
-      }
+    const coords = currentLocation?.coords;
 
-      setUser(currentUser);
-
-      const activeRide = await getActiveRide(
-        currentUser.userId
-      );
-
-      if (activeRide) {
-        router.replace({
-          pathname: "/(passenger)/RideStatus",
-          params: {
-            rideId: activeRide.id,
-          },
-        });
-
-        return;
-      }
-    } catch (error) {
-      console.log(
-        "Erreur chargement utilisateur :",
-        error
-      );
-    }
-  };
-
-  // ============================================================
-  // DESTINATION
-  // ============================================================
-
-  const handleDestinationSelect = async (place) => {
-    if (!currentLocation?.coords) {
-      console.log(
-        "❌ currentLocation =",
-        currentLocation
-      );
-
+    if (
+      !coords ||
+      typeof coords.latitude !== "number" ||
+      typeof coords.longitude !== "number" ||
+      typeof destination.latitude !== "number" ||
+      typeof destination.longitude !== "number"
+    ) {
       return;
     }
 
-    try {
-      setDestination(place);
+    const routeKey = [
+      destination.latitude,
+      destination.longitude,
+    ].join(",");
 
-      const route = await calculateRoute(
-        {
-          latitude:
-            currentLocation.coords.latitude,
-          longitude:
-            currentLocation.coords.longitude,
-        },
-        {
-          latitude: place.latitude,
-          longitude: place.longitude,
+    // Ne pas recalculer à chaque actualisation du GPS.
+    if (lastRouteKey.current === routeKey) return;
+
+    lastRouteKey.current = routeKey;
+
+    const requestId = ++routeRequestId.current;
+    let cancelled = false;
+
+    async function calculateSelectedRoute() {
+      setCalculatingRoute(true);
+
+      try {
+        const route = await calculateRoute(
+          {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          },
+          {
+            latitude: destination.latitude,
+            longitude: destination.longitude,
+          }
+        );
+
+        if (cancelled || requestId !== routeRequestId.current) return;
+
+        if (!route || typeof route.distance !== "number") {
+          setEstimatedDistance(0);
+          lastRouteKey.current = null;
+          return;
         }
-      );
 
-      if (!route) {
-        return;
+        // La distance est déjà en kilomètres.
+        setEstimatedDistance(route.distance);
+
+        console.log("Distance calculée :", route.distance, "km");
+      } catch (error) {
+        if (!cancelled) {
+          setEstimatedDistance(0);
+          lastRouteKey.current = null;
+          console.log("Erreur calcul itinéraire :", error);
+        }
+      } finally {
+        if (!cancelled && requestId === routeRequestId.current) {
+          setCalculatingRoute(false);
+        }
       }
-
-      setEstimatedDistance(route.distance);
-    } catch (error) {
-      console.log(
-        "Erreur calcul itinéraire :",
-        error
-      );
     }
-  };
 
-  // ============================================================
-  // DEMANDE DE COURSE
-  // ============================================================
+    calculateSelectedRoute();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    destination,
+    currentLocation?.coords?.latitude,
+    currentLocation?.coords?.longitude,
+  ]);
+
+  // Conserver la destination même si le GPS n'est pas encore prêt.
+  const handleDestinationSelect = useCallback((place) => {
+    if (!place) return;
+
+    console.log("Destination sélectionnée :", place);
+
+    routeRequestId.current += 1;
+    lastRouteKey.current = null;
+
+    setCalculatingRoute(false);
+    setEstimatedDistance(0);
+    setDestination(place);
+  }, []);
+
+  // Commander uniquement lorsque les informations sont prêtes.
   const handleRideRequest = () => {
+    if (!user || !destination || !currentLocation?.coords) {
+      console.log("Informations de course incomplètes.");
+      return;
+    }
+
+    if (calculatingRoute || estimatedDistance <= 0) {
+      return;
+    }
+
     requestRide({
       user,
       pickup,
@@ -142,9 +188,13 @@ export default function PassengerHome() {
     });
   };
 
-  // ============================================================
-  // AFFICHAGE
-  // ============================================================
+  const canRequestRide =
+    Boolean(user) &&
+    Boolean(destination) &&
+    Boolean(currentLocation?.coords) &&
+    !loadingLocation &&
+    !calculatingRoute &&
+    estimatedDistance > 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -154,129 +204,71 @@ export default function PassengerHome() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.content}>
-
-          {/* ==================================================
-              RECHERCHE
-          ================================================== */}
-
           <View style={styles.section}>
             <DestinationSearch
               userId={user?.userId}
               currentLocation={
                 currentLocation?.coords
                   ? {
-                      latitude:
-                        currentLocation.coords.latitude,
-                      longitude:
-                        currentLocation.coords.longitude,
+                      latitude: currentLocation.coords.latitude,
+                      longitude: currentLocation.coords.longitude,
                     }
                   : undefined
               }
-              onSelect={
-                handleDestinationSelect
-              }
+              onSelect={handleDestinationSelect}
             />
           </View>
-
-          {/* ==================================================
-              VÉHICULES
-          ================================================== */}
 
           <View style={styles.section}>
             <VehicleSelector
               vehicleType={vehicleType}
-              setVehicleType={
-                setVehicleType
-              }
-              estimatedDistance={
-                estimatedDistance
-              }
+              setVehicleType={setVehicleType}
+              estimatedDistance={estimatedDistance}
             />
           </View>
 
-          {/* ==================================================
-              ESTIMATION
-          ================================================== */}
-
-          {destination && (
+          {destination && estimatedDistance > 0 && (
             <View style={styles.section}>
               <FareSummary
-                distance={
-                  estimatedDistance
-                }
-                vehicleType={
-                  vehicleType
-                }
+                distance={estimatedDistance}
+                vehicleType={vehicleType}
               />
             </View>
           )}
 
-          {/* ==================================================
-              COMMANDER
-          ================================================== */}
-
           <View style={styles.commandSection}>
             <PrimaryButton
               title="Commander"
-              onPress={
-                handleRideRequest
-              }
-              disabled={
-                !destination ||
-                loadingLocation
-              }
+              onPress={handleRideRequest}
+              disabled={!canRequestRide}
             />
           </View>
-
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
-
-  /*
-   * Le contenu prend toute la hauteur disponible.
-   * Les éléments sont répartis verticalement.
-   */
   scrollContent: {
     flexGrow: 1,
     paddingVertical: 20,
   },
-
-  /*
-   * Tous les blocs sont répartis de manière équilibrée.
-   */
   content: {
     width: "100%",
     maxWidth: 520,
     paddingHorizontal: 20,
     alignSelf: "center",
-
     flexGrow: 1,
     justifyContent: "space-evenly",
   },
-
-  /*
-   * Chaque bloc occupe sa largeur normalement.
-   */
   section: {
     width: "100%",
   },
-
-  /*
-   * Le bouton est traité comme un bloc normal
-   * dans la répartition verticale.
-   */
   commandSection: {
     width: "100%",
   },

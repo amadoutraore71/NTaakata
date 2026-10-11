@@ -49,15 +49,18 @@ export default function useRideRequest() {
 
       if (!route) return;
 
-      const distance = Number(route.distance.toFixed(1));
+      
+const distance = route.distance;
 
-      const price = calculateFare(
-        distance,
-        vehicleType
-      );
+const price = calculateFare(
+  distance,
+  vehicleType
+);
 
-      const duration =
-        Math.round((distance / 40) * 60);
+const duration = Math.round(
+  (distance / 40) * 60
+);
+
 
       const drivers =
         await findAvailableDrivers(

@@ -1,7 +1,7 @@
-
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 export default function LeafletMap({
   html,
   mode = "tracking",
@@ -15,36 +15,50 @@ export default function LeafletMap({
   destinationLocation = null,
 }) {
   const webViewRef = useRef(null);
-  const htmlRef = useRef(html || "");
+  const htmlRef = useRef(typeof html === "string" ? html : "");
   const readyRef = useRef(false);
   const loadedHtmlRef = useRef(null);
   const pendingRef = useRef([]);
   const pickupSentRef = useRef(false);
   const destinationSentRef = useRef(false);
+  const arrivedSentRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const webViewSource = useMemo(() => ({ html: html || "" }), [html]);
 
-  const webViewSource = useMemo(() => ({ html }), [html]);
+  const safeDrivers = Array.isArray(drivers) ? drivers : [];
+  const driversSignature = useMemo(() => {
+    try {
+      return JSON.stringify(safeDrivers);
+    } catch {
+      return "[]";
+    }
+  }, [safeDrivers]);
+  const stableDrivers = useMemo(() => safeDrivers, [driversSignature]);
 
-  // Les tableaux/objets sont souvent recréés à chaque rendu parent.
-  // On stabilise leur référence tant que leurs données sérialisées ne changent pas,
-  // afin de ne pas renvoyer inutilement des messages à la carte.
-  const driversSignature = JSON.stringify(Array.isArray(drivers) ? drivers : []);
-  const stableDrivers = useMemo(
-    () => (Array.isArray(drivers) ? drivers : []),
-    [driversSignature]
-  );
-
-  const searchingDriverSignature = JSON.stringify(searchingDriver || null);
+  const searchingDriverSignature = useMemo(() => {
+    try {
+      return JSON.stringify(searchingDriver ?? null);
+    } catch {
+      return "null";
+    }
+  }, [searchingDriver]);
   const stableSearchingDriver = useMemo(
-    () => searchingDriver || null,
+    () => searchingDriver ?? null,
     [searchingDriverSignature]
   );
 
-  const destinationSignature = JSON.stringify(destinationLocation || null);
+  const destinationSignature = useMemo(() => {
+    try {
+      return JSON.stringify(destinationLocation ?? null);
+    } catch {
+      return "null";
+    }
+  }, [destinationLocation]);
   const stableDestination = useMemo(
-    () => destinationLocation,
+    () => destinationLocation ?? null,
     [destinationSignature]
   );
+
   useEffect(() => {
     htmlRef.current = typeof html === "string" ? html : "";
     readyRef.current = false;
@@ -52,17 +66,21 @@ export default function LeafletMap({
     pendingRef.current = [];
     pickupSentRef.current = false;
     destinationSentRef.current = false;
+    arrivedSentRef.current = false;
     setMapReady(false);
   }, [html]);
 
   const sendMessage = useCallback((message) => {
+    const currentHtml = htmlRef.current;
     if (
       !webViewRef.current ||
       !readyRef.current ||
-      loadedHtmlRef.current !== htmlRef.current
+      loadedHtmlRef.current !== currentHtml
     ) {
+      // Garder seulement le dernier message de chaque type évite
+      // d'accumuler des commandes périmées pendant le chargement.
       pendingRef.current = pendingRef.current.filter(
-        (item) => item.type !== message?.type
+        (item) => item.type !== (message?.type || "message")
       );
       pendingRef.current.push({
         type: message?.type || "message",
@@ -73,7 +91,6 @@ export default function LeafletMap({
 
     try {
       const payload = JSON.stringify(message);
-
       webViewRef.current.injectJavaScript(`
         (function () {
           try {
@@ -86,96 +103,74 @@ export default function LeafletMap({
         })();
         true;
       `);
-
       return true;
     } catch (error) {
-      console.error("❌ Envoi Leaflet impossible :", error);
+      console.error("[LeafletMap] Envoi du message impossible:", error?.message || error);
       return false;
     }
   }, []);
 
   const flushPending = useCallback(() => {
-    if (!readyRef.current || loadedHtmlRef.current !== htmlRef.current) {
-      return;
-    }
-
+    if (!readyRef.current || loadedHtmlRef.current !== htmlRef.current) return;
     const queue = [...pendingRef.current];
     pendingRef.current = [];
-
-    queue.forEach((item) => sendMessage(item.message));
+    queue.forEach(({ message }) => sendMessage(message));
   }, [sendMessage]);
 
   useEffect(() => {
     if (!mapReady) return;
 
     if (mode === "drivers") {
+      sendMessage({ type: "drivers_update", drivers: stableDrivers });
       sendMessage({
-        type: "drivers_update",
-        drivers: stableDrivers,
+        type: "searching_driver",
+        driver: stableSearchingDriver || stableDrivers[0] || null,
       });
     }
 
     if (mode === "tracking" && stableDrivers[0]) {
-      sendMessage({
-        type: "driver_position",
-        driver: stableDrivers[0],
-      });
+      sendMessage({ type: "driver_position", driver: stableDrivers[0] });
     }
-  }, [mapReady, mode, stableDrivers, sendMessage]);
-
-  useEffect(() => {
-    if (!mapReady || mode !== "drivers") return;
-
-    sendMessage({
-      type: "searching_driver",
-      driver: stableSearchingDriver || stableDrivers[0] || null,
-    });
   }, [
     mapReady,
     mode,
-    stableSearchingDriver,
     stableDrivers,
+    stableSearchingDriver,
     sendMessage,
   ]);
 
   useEffect(() => {
     if (!mapReady || mode !== "tracking") return;
 
-    if (showDriverRoute && stableDrivers[0] && !pickupSentRef.current) {
-      pickupSentRef.current = true;
-
-      sendMessage({
-        type: "driver_route",
-        driver: stableDrivers[0],
-      });
-    }
-
-    if (!showDriverRoute && pickupSentRef.current) {
+    if (showDriverRoute && stableDrivers[0]) {
+      if (!pickupSentRef.current) {
+        const sent = sendMessage({
+          type: "driver_route",
+          driver: stableDrivers[0],
+        });
+        if (sent) pickupSentRef.current = true;
+      }
+    } else if (pickupSentRef.current) {
       sendMessage({ type: "stop_routes" });
+      pickupSentRef.current = false;
     }
   }, [mapReady, mode, showDriverRoute, stableDrivers, sendMessage]);
 
   useEffect(() => {
     if (!mapReady || mode !== "tracking") return;
 
-    if (
-      startDestinationRoute &&
-      stableDrivers[0] &&
-      stableDestination &&
-      !destinationSentRef.current
-    ) {
-      destinationSentRef.current = true;
-
-      sendMessage({
-        type: "start_destination_route",
-        driver: stableDrivers[0],
-        destination: stableDestination,
-      });
-    }
-
-    if (!startDestinationRoute && destinationSentRef.current) {
-      destinationSentRef.current = false;
+    if (startDestinationRoute && stableDrivers[0] && stableDestination) {
+      if (!destinationSentRef.current) {
+        const sent = sendMessage({
+          type: "start_destination_route",
+          driver: stableDrivers[0],
+          destination: stableDestination,
+        });
+        if (sent) destinationSentRef.current = true;
+      }
+    } else if (destinationSentRef.current) {
       sendMessage({ type: "stop_destination_route" });
+      destinationSentRef.current = false;
     }
   }, [
     mapReady,
@@ -187,76 +182,61 @@ export default function LeafletMap({
   ]);
 
   useEffect(() => {
-    if (!mapReady || mode !== "tracking" || !driverArrived) return;
+    if (!mapReady || mode !== "tracking") return;
 
-    sendMessage({ type: "driver_arrived" });
+    if (driverArrived && !arrivedSentRef.current) {
+      const sent = sendMessage({ type: "driver_arrived" });
+      if (sent) arrivedSentRef.current = true;
+    } else if (!driverArrived) {
+      arrivedSentRef.current = false;
+    }
   }, [mapReady, mode, driverArrived, sendMessage]);
 
-  const handleMessage = useCallback(
-    (event) => {
-      try {
-        const data = JSON.parse(event.nativeEvent.data);
-        if (!data) return;
+  const handleMessage = useCallback((event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (!data) return;
 
-        if (data.type === "ready") {
-          readyRef.current = true;
-          loadedHtmlRef.current = htmlRef.current;
-          setMapReady(true);
-          flushPending();
-          return;
-        }
-
-        if (data.type === "driver_selected") {
-          onDriverSelected?.(data.driver);
-          return;
-        }
-
-        if (
-          data.type === "route_info" ||
-          data.type === "destination_route_info"
-        ) {
-          onRouteInfo?.(data);
-          return;
-        }
-
-        if (
-          data.type === "error" ||
-          data.type === "webview_js_error"
-        ) {
-          console.error("==========================================");
-          console.error("💥 ERREUR JAVASCRIPT WEBVIEW");
-          console.error("📌 Type :", data.type);
-          console.error("📌 Message :", data.message);
-          console.error(
-            "📌 Fichier :",
-            data.source || data.filename || "inconnu"
-          );
-          console.error(
-            "📌 Ligne :",
-            data.line ?? data.lineno ?? "inconnue"
-          );
-          console.error(
-            "📌 Colonne :",
-            data.column ?? data.colno ?? "inconnue"
-          );
-          console.error("📌 Stack :", data.stack || "aucune");
-          console.error("==========================================");
-          return;
-        }
-
-        if (data.type === "debug") {
-          console.log("WEBVIEW :", data.message);
-        }
-      } catch (error) {
-        console.error(
-          "❌ Message WebView non JSON :",
-          event.nativeEvent.data,
-          error
-        );
+      if (data.type === "ready") {
+        readyRef.current = true;
+        loadedHtmlRef.current = htmlRef.current;
+        setMapReady(true);
+        flushPending();
+        return;
       }
-    },
-    [flushPending, onDriverSelected, onRouteInfo]
-  );
+
+      if (data.type === "driver_selected") {
+        onDriverSelected?.(data.driver);
+        return;
+      }
+
+      if (data.type === "route_info" || data.type === "destination_route_info") {
+        onRouteInfo?.(data);
+        return;
+      }
+
+      if (data.type === "error" || data.type === "webview_js_error") {
+        console.error("[LeafletMap] Erreur JavaScript WebView:", {
+          type: data.type,
+          message: data.message,
+          source: data.source || data.filename || "inconnu",
+          line: data.line ?? data.lineno ?? "inconnue",
+          column: data.column ?? data.colno ?? "inconnue",
+          stack: data.stack || "aucune",
+        });
+        return;
+      }
+
+      // Les messages de debug détaillés sont désactivés pour éviter
+      // de polluer la console à chaque mise à jour de la carte.
+    } catch (error) {
+      console.warn(
+        "[LeafletMap] Message WebView non JSON:",
+        String(event.nativeEvent.data || "").slice(0, 200),
+        error?.message || error
+      );
+    }
+  }, [flushPending, onDriverSelected, onRouteInfo]);
 
   if (!html) {
     return (
@@ -284,10 +264,10 @@ export default function LeafletMap({
           setMapReady(false);
         }}
         onLoadEnd={() => {
-          console.log("🟢 WebView Leaflet chargée");
+          // Pas de log à chaque rechargement normal de la carte.
         }}
         onError={(event) => {
-          console.warn("⚠️ WebView :", event.nativeEvent);
+          console.warn("[LeafletMap] Erreur WebView:", event.nativeEvent?.description || "inconnue");
         }}
         style={styles.map}
       />
@@ -296,13 +276,8 @@ export default function LeafletMap({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    minHeight: 1,
-  },
-  map: {
-    flex: 1,
-  },
+  container: { flex: 1, minHeight: 1 },
+  map: { flex: 1 },
   loading: {
     flex: 1,
     minHeight: 120,

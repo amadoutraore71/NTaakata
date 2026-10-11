@@ -6,17 +6,12 @@ import {
 
 } from "expo-router";
 
-
-
 import {
 
     useEffect,
-
     useState,
-
+    useRef,
 } from "react";
-
-
 
 import {
 
@@ -30,23 +25,17 @@ import {
 
 } from "react-native";
 
-
-
 import {
 
     GestureHandlerRootView,
 
 } from "react-native-gesture-handler";
 
-
-
 import {
 
     SafeAreaView,
 
 } from "react-native-safe-area-context";
-
-
 
 import {
 
@@ -66,11 +55,7 @@ import {
 
 } from "firebase/firestore";
 
-
-
 import { db } from "../../../firebase/config";
-
-
 
 import {
 
@@ -86,23 +71,11 @@ import {
 
 } from "../../../services/debugService";
 
-
-
-import {
-
-    findAvailableDrivers,
-
-} from "../../../services/matching/driverSelectionService";
-
-
-
 import {
 
     cancelRide,
 
 } from "../../../services/rideLifecycleService";
-
-
 
 import {
 
@@ -112,25 +85,11 @@ import {
 
 } from "../../../services/matching/rideRequestService";
 
-
-
-import {
-
-    startDriverMovement,
-
-} from "../../../src/services/simulation/driverMovementService";
-
-
-
 import DeveloperPanel from "../../components/debug/DeveloperPanel";
 
 import RideStatusBanner from "../../components/ride/RideStatusBanner";
 
 import RideTrackingMap from "../../components/ride/RideTrackingMap";
-
-
-
-
 
 export default function RideStatus() {
 
@@ -138,19 +97,13 @@ export default function RideStatus() {
 
     useLocalSearchParams();
 
-
-
   const [ride, setRide] =
 
     useState(null);
 
-
-
   const [driver, setDriver] =
 
     useState(null);
-
-
 
   const [
 
@@ -159,8 +112,6 @@ export default function RideStatus() {
     setPassengerLocation,
 
   ] = useState(null);
-
-
 
   const [
 
@@ -178,8 +129,6 @@ export default function RideStatus() {
 
   });
 
-
-
   // IMPORTANT :
 
   // Cette liste ne doit jamais être vidée
@@ -194,8 +143,6 @@ export default function RideStatus() {
 
   ] = useState([]);
 
-
-
   const [
 
     rideRequests,
@@ -204,17 +151,11 @@ export default function RideStatus() {
 
   ] = useState([]);
 
-
-
-
-
   // =====================================================
 
   // STATUTS QUI UTILISENT LA CARTE DE SUIVI
 
   // =====================================================
-
-
 
   const trackingStatuses = [
 
@@ -230,17 +171,11 @@ export default function RideStatus() {
 
   ];
 
-
-
-
-
   // =====================================================
 
   // ÉCOUTER LA COURSE
 
   // =====================================================
-
-
 
   useEffect(() => {
 
@@ -249,8 +184,6 @@ export default function RideStatus() {
       return;
 
     }
-
-
 
     const unsubscribe = onSnapshot(
 
@@ -268,13 +201,9 @@ export default function RideStatus() {
 
           );
 
-
-
           return;
 
         }
-
-
 
         const rideData = {
 
@@ -284,61 +213,39 @@ export default function RideStatus() {
 
         };
 
-
-
-        console.log(
-
-          "🚕 Ride :",
-
-          rideData
-
-        );
-
-
-
         setRide(rideData);
 
-
-
         if (rideData.pickup) {
+          const nextLocation = {
+            latitude: Number(rideData.pickup.latitude),
+            longitude: Number(rideData.pickup.longitude),
+          };
 
-          setPassengerLocation({
-
-            latitude:
-
-              rideData.pickup.latitude,
-
-
-
-            longitude:
-
-              rideData.pickup.longitude,
-
+          setPassengerLocation((current) => {
+            if (
+              current &&
+              current.latitude === nextLocation.latitude &&
+              current.longitude === nextLocation.longitude
+            ) {
+              return current;
+            }
+            return nextLocation;
           });
-
         }
 
       }
 
     );
 
-
-
     return unsubscribe;
 
   }, [rideId]);
-
-
-
-
 
   // =====================================================
 
   // ÉCOUTER LE CONDUCTEUR ACCEPTÉ
 
   // =====================================================
-
-
 
   useEffect(() => {
 
@@ -349,18 +256,6 @@ export default function RideStatus() {
       return;
 
     }
-
-
-
-    console.log(
-
-      "🔎 Recherche conducteur accepté :",
-
-      ride.driverId
-
-    );
-
-
 
     const unsubscribe = onSnapshot(
 
@@ -386,21 +281,15 @@ export default function RideStatus() {
 
           );
 
-
-
           setDriver(null);
 
           return;
 
         }
 
-
-
         const data =
 
           snapshot.data();
-
-
 
         const driverData = {
 
@@ -410,155 +299,72 @@ export default function RideStatus() {
 
         };
 
-
-
-        console.log(
-
-          "✅ Conducteur accepté :",
-
-          driverData.name
-
-        );
-
-
-
         setDriver(driverData);
 
       }
 
     );
 
-
-
     return unsubscribe;
 
   }, [ride?.driverId]);
 
-
-
-
-
   // =====================================================
 
-  // CHARGER LES CONDUCTEURS DISPONIBLES
-
-  // =====================================================
-
-
-
+  // CHARGER LES CONDUCTEURS DEPUIS LES DEMANDES DÉJÀ CRÉÉES
+  // Ne pas rappeler findAvailableDrivers ici : la recherche et le broadcast
+  // sont déjà effectués au moment de la création de la course.
   useEffect(() => {
+    const driversFromRequests = (Array.isArray(rideRequests) ? rideRequests : [])
+      .map((request) => {
+        const latitude = Number(request.driverLatitude);
+        const longitude = Number(request.driverLongitude);
+        const driverId = request.driverId;
 
-    async function loadDrivers() {
+        if (
+          !driverId ||
+          !Number.isFinite(latitude) ||
+          !Number.isFinite(longitude)
+        ) {
+          return null;
+        }
 
-      if (
+        return {
+          id: driverId,
+          userId: driverId,
+          docId: driverId,
+          name: request.driverName || "Conducteur",
+          phone: request.driverPhone || null,
+          latitude,
+          longitude,
+          vehicleType: request.driverVehicleType || null,
+          distance: request.driverDistance ?? null,
+        };
+      })
+      .filter(Boolean);
 
-        !passengerLocation ||
+    setNearbyDrivers((previous) => {
+      // Si aucune demande n'est encore arrivée depuis Firestore, conserver
+      // les derniers conducteurs affichés au lieu de vider la carte.
+      if (driversFromRequests.length === 0) return previous;
 
-        !ride ||
+      // Éviter les mises à jour d'état inutiles à chaque snapshot identique.
+      const previousKey = previous
+        .map((d) => `${d.id}|${d.latitude}|${d.longitude}`)
+        .join(";");
+      const nextKey = driversFromRequests
+        .map((d) => `${d.id}|${d.latitude}|${d.longitude}`)
+        .join(";");
 
-        ride.status !== "searching"
-
-      ) {
-
-        return;
-
-      }
-
-
-
-      try {
-
-        const drivers =
-
-          await findAvailableDrivers(
-
-            passengerLocation,
-
-            ride.vehicleType
-
-          );
-
-
-
-        console.log(
-
-          "🚕 Conducteurs disponibles :",
-
-          drivers.length
-
-        );
-
-
-
-        console.log(
-
-          "🚕 Liste conducteurs :",
-
-          drivers
-
-        );
-
-
-
-        // IMPORTANT :
-
-        // On conserve la liste.
-
-        // Elle ne sera PAS remise à [] lorsque
-
-        // ride.status deviendra search_timeout
-
-        // ou search_failed.
-
-        setNearbyDrivers(
-
-          drivers
-
-        );
-
-
-
-      } catch (error) {
-
-        console.log(
-
-          "❌ Erreur chargement conducteurs :",
-
-          error
-
-        );
-
-      }
-
-    }
-
-
-
-    loadDrivers();
-
-
-
-  }, [
-
-    passengerLocation,
-
-    ride?.status,
-
-    ride?.vehicleType,
-
-  ]);
-
-
-
-
+      return previousKey === nextKey ? previous : driversFromRequests;
+    });
+  }, [rideRequests]);
 
   // =====================================================
 
   // ÉCOUTER LES DEMANDES BROADCAST
 
   // =====================================================
-
-
 
   useEffect(() => {
 
@@ -570,8 +376,6 @@ export default function RideStatus() {
 
     }
 
-
-
     const requestsQuery = query(
 
       collection(db, "ride_requests"),
@@ -579,8 +383,6 @@ export default function RideStatus() {
       where("rideId", "==", rideId)
 
     );
-
-
 
     const unsubscribe = onSnapshot(
 
@@ -608,18 +410,6 @@ export default function RideStatus() {
 
           );
 
-
-
-        console.log(
-
-          "🧪 RideStatus - demandes broadcast :",
-
-          requests
-
-        );
-
-
-
         setRideRequests(requests);
 
       },
@@ -638,23 +428,15 @@ export default function RideStatus() {
 
     );
 
-
-
     return unsubscribe;
 
   }, [rideId]);
-
-
-
-
 
   // =====================================================
 
   // TEST : ACCEPTER UNE DEMANDE RÉELLE
 
   // =====================================================
-
-
 
   const handleDebugAcceptRequest = async (requestId) => {
 
@@ -663,8 +445,6 @@ export default function RideStatus() {
       const result =
 
         await acceptRideRequest(requestId);
-
-
 
       console.log(
 
@@ -688,25 +468,17 @@ export default function RideStatus() {
 
   };
 
-
-
-
-
   // =====================================================
 
   // TEST : REFUSER UNE DEMANDE RÉELLE
 
   // =====================================================
 
-
-
   const handleDebugRejectRequest = async (requestId) => {
 
     try {
 
       await rejectRideRequest(requestId);
-
-
 
       console.log(
 
@@ -730,10 +502,6 @@ export default function RideStatus() {
 
   };
 
-
-
-
-
   // =====================================================
 
   // COURSE ANNULÉE -> RETOUR ACCUEIL PASSAGER
@@ -744,11 +512,7 @@ export default function RideStatus() {
 
     if (ride?.status !== "cancelled") return;
 
-
-
     console.log("🛑 Course annulée -> accueil passager");
-
-
 
     const timer = setTimeout(() => {
 
@@ -756,21 +520,15 @@ export default function RideStatus() {
 
     }, 150);
 
-
-
     return () => clearTimeout(timer);
 
   }, [ride?.status]);
-
-
 
   // =====================================================
 
   // COURSE TERMINÉE
 
   // =====================================================
-
-
 
   useEffect(() => {
 
@@ -786,27 +544,19 @@ export default function RideStatus() {
 
     }
 
-
-
     router.replace({
 
       pathname:
 
         "/(passenger)/rate-driver",
 
-
-
       params: {
 
         rideId: ride.id,
 
-
-
         driverPhone:
 
           ride.driverPhone ?? "",
-
-
 
         driverName:
 
@@ -816,21 +566,13 @@ export default function RideStatus() {
 
     });
 
-
-
   }, [ride?.status]);
-
-
-
-
 
   // =====================================================
 
   // ANNULER LA COURSE
 
   // =====================================================
-
-
 
   const handleCancelRide =
 
@@ -842,8 +584,6 @@ export default function RideStatus() {
 
       }
 
-
-
       try {
 
         await cancelRide(
@@ -852,15 +592,11 @@ export default function RideStatus() {
 
         );
 
-
-
         router.replace(
 
           "/(passenger)"
 
         );
-
-
 
       } catch (error) {
 
@@ -876,17 +612,11 @@ export default function RideStatus() {
 
     };
 
-
-
-
-
   // =====================================================
 
   // RECHERCHE EN COURS
 
   // =====================================================
-
-
 
   const isSearching =
 
@@ -894,17 +624,11 @@ export default function RideStatus() {
 
     "searching";
 
-
-
-
-
   // =====================================================
 
   // CONDUCTEUR ACTUELLEMENT CONTACTÉ
 
   // =====================================================
-
-
 
   const searchingDriver =
 
@@ -920,13 +644,9 @@ export default function RideStatus() {
 
             ride.currentSearchingDriverId,
 
-
-
           name:
 
             ride.currentSearchingDriverName,
-
-
 
           latitude:
 
@@ -936,8 +656,6 @@ export default function RideStatus() {
 
               ?.latitude,
 
-
-
           longitude:
 
             ride
@@ -946,13 +664,9 @@ export default function RideStatus() {
 
               ?.longitude,
 
-
-
           distance:
 
             ride.currentSearchingDriverDistance,
-
-
 
           vehicleType:
 
@@ -962,17 +676,11 @@ export default function RideStatus() {
 
       : null;
 
-
-
-
-
   // =====================================================
 
   // CONDUCTEUR ACCEPTÉ
 
   // =====================================================
-
-
 
   const displayedDriver =
 
@@ -982,17 +690,11 @@ export default function RideStatus() {
 
       : null;
 
-
-
-
-
   // =====================================================
 
   // FIN DE RECHERCHE
 
   // =====================================================
-
-
 
   const searchFinished =
 
@@ -1004,59 +706,16 @@ export default function RideStatus() {
 
       "search_failed";
 
-
-
-
-
   // =====================================================
 
   // DEBUG
 
   // =====================================================
-
-
-
-  console.log(
-
-    "🔎 RideStatus :",
-
-    {
-
-      status: ride?.status,
-
-
-
-      nearbyDrivers:
-
-        nearbyDrivers.length,
-
-
-
-      searchingDriver:
-
-        searchingDriver?.name,
-
-
-
-      acceptedDriver:
-
-        displayedDriver?.name,
-
-    }
-
-  );
-
-
-
-
-
   // =====================================================
 
   // CHARGEMENT
 
   // =====================================================
-
-
 
   if (!ride) {
 
@@ -1096,17 +755,11 @@ export default function RideStatus() {
 
   }
 
-
-
-
-
   // =====================================================
 
   // AFFICHAGE
 
   // =====================================================
-
-
 
   return (
 
@@ -1122,11 +775,7 @@ export default function RideStatus() {
 
       >
 
-
-
         {/* ================= CARTE ================= */}
-
-
 
         {passengerLocation && (
 
@@ -1146,15 +795,11 @@ export default function RideStatus() {
 
             }
 
-
-
             passengerLocation={
 
               passengerLocation
 
             }
-
-
 
             driverLocation={
 
@@ -1166,31 +811,21 @@ export default function RideStatus() {
 
                       displayedDriver.docId,
 
-
-
                     userId:
 
                       displayedDriver.userId,
-
-
 
                     name:
 
                       displayedDriver.name,
 
-
-
                     latitude:
 
                       displayedDriver.latitude,
 
-
-
                     longitude:
 
                       displayedDriver.longitude,
-
-
 
                     vehicleType:
 
@@ -1201,8 +836,6 @@ export default function RideStatus() {
                 : null
 
             }
-
-
 
             /*
 
@@ -1236,8 +869,6 @@ export default function RideStatus() {
 
             }
 
-
-
             /*
 
              * La ligne de recherche est
@@ -1270,8 +901,6 @@ export default function RideStatus() {
 
             }
 
-
-
             showDriverRoute={
 
               ride.status === "driver_assigned" ||
@@ -1296,23 +925,17 @@ export default function RideStatus() {
 
             }
 
-
-
             destinationLocation={
 
               ride.destination ?? null
 
             }
 
-
-
             onDriverSelected={
 
               () => {}
 
             }
-
-
 
             onRouteInfo={
 
@@ -1324,13 +947,9 @@ export default function RideStatus() {
 
                     route.distance,
 
-
-
                   duration:
 
                     route.duration,
-
-
 
                   eta:
 
@@ -1354,28 +973,29 @@ export default function RideStatus() {
 
         )}
 
-
-
-
-
         {/* ================= ANNULATION À TOUT MOMENT ================= */}
 
         {ride?.status === "started" && (
+
           <View style={styles.alwaysCancelContainer}>
+
             <TouchableOpacity
+
               style={styles.alwaysCancelButton}
+
               onPress={handleCancelRide}
+
             >
+
               <Text style={styles.alwaysCancelText}>Annuler la course</Text>
+
             </TouchableOpacity>
+
           </View>
+
         )}
 
-
-
         {/* ================= BANNIÈRE ================= */}
-
-
 
         <View
 
@@ -1395,8 +1015,6 @@ export default function RideStatus() {
 
             }
 
-
-
             driverName={
 
               ride.driverId
@@ -1411,8 +1029,6 @@ export default function RideStatus() {
 
             }
 
-
-
             onCancel={
 
               handleCancelRide
@@ -1423,13 +1039,7 @@ export default function RideStatus() {
 
         </View>
 
-
-
-
-
         {/* ============ RECHERCHE TERMINÉE ============ */}
-
-
 
         {searchFinished && (
 
@@ -1467,8 +1077,6 @@ export default function RideStatus() {
 
               </Text>
 
-
-
               <Text
 
                 style={
@@ -1482,8 +1090,6 @@ export default function RideStatus() {
                 Aucun conducteur n'a accepté votre course.
 
               </Text>
-
-
 
               <TouchableOpacity
 
@@ -1527,13 +1133,7 @@ export default function RideStatus() {
 
         )}
 
-
-
-
-
         {/* ============ PANNEAU DE DÉVELOPPEMENT ============ */}
-
-
 
         {__DEV__ &&
 
@@ -1548,8 +1148,6 @@ export default function RideStatus() {
                 onAcceptRequest={handleDebugAcceptRequest}
 
                 onRejectRequest={handleDebugRejectRequest}
-
-
 
                 onSimulateRide={async () => {
 
@@ -1567,8 +1165,6 @@ export default function RideStatus() {
 
                     }
 
-
-
                     await debugSimulateRide(
 
                       ride.id,
@@ -1585,8 +1181,6 @@ export default function RideStatus() {
 
                 }}
 
-
-
                 onAcceptRide={async () => {
 
                   const request =
@@ -1598,8 +1192,6 @@ export default function RideStatus() {
                         item.status === "pending"
 
                     );
-
-
 
                   if (!request) {
 
@@ -1613,8 +1205,6 @@ export default function RideStatus() {
 
                   }
 
-
-
                   await handleDebugAcceptRequest(
 
                     request.id
@@ -1622,8 +1212,6 @@ export default function RideStatus() {
                   );
 
                 }}
-
-
 
                 onMoveDriver={() => {
 
@@ -1635,8 +1223,6 @@ export default function RideStatus() {
 
                 }}
 
-
-
                 onIncomingRide={() => {
 
                   console.log(
@@ -1647,8 +1233,6 @@ export default function RideStatus() {
 
                 }}
 
-
-
                 onStartRide={() => {
 
                   console.log(
@@ -1658,8 +1242,6 @@ export default function RideStatus() {
                   );
 
                 }}
-
-
 
                 onFinishRide={async () => {
 
@@ -1681,8 +1263,6 @@ export default function RideStatus() {
 
                 }}
 
-
-
                 onCancelRide={async () => {
 
                   try {
@@ -1702,8 +1282,6 @@ export default function RideStatus() {
                   }
 
                 }}
-
-
 
                 onResetRide={async () => {
 
@@ -1731,8 +1309,6 @@ export default function RideStatus() {
 
           )}
 
-
-
       </SafeAreaView>
 
     </GestureHandlerRootView>
@@ -1741,23 +1317,15 @@ export default function RideStatus() {
 
 }
 
-
-
-
-
 // =====================================================
 
 // STYLES
 
 // =====================================================
 
-
-
 const styles =
 
   StyleSheet.create({
-
-
 
     container: {
 
@@ -1766,8 +1334,6 @@ const styles =
       backgroundColor: "#FFF",
 
     },
-
-
 
     loadingContainer: {
 
@@ -1779,27 +1345,40 @@ const styles =
 
     },
 
-
-
     alwaysCancelContainer: {
+
     position: "absolute",
+
     left: 16,
+
     right: 16,
+
     bottom: 92,
+
     zIndex: 220,
+
   },
 
   alwaysCancelButton: {
+
     backgroundColor: "#DC2626",
+
     borderRadius: 14,
+
     paddingVertical: 13,
+
     alignItems: "center",
+
   },
 
   alwaysCancelText: {
+
     color: "#FFFFFF",
+
     fontSize: 15,
+
     fontWeight: "700",
+
   },
 
   bottomBanner: {
@@ -1816,8 +1395,6 @@ const styles =
 
     },
 
-
-
     developerPanel: {
 
       position: "absolute",
@@ -1832,8 +1409,6 @@ const styles =
 
     },
 
-
-
     searchFinishedContainer: {
 
       position: "absolute",
@@ -1847,8 +1422,6 @@ const styles =
       zIndex: 250,
 
     },
-
-
 
     searchFinishedCard: {
 
@@ -1874,8 +1447,6 @@ const styles =
 
     },
 
-
-
     searchFinishedTitle: {
 
       fontSize: 19,
@@ -1887,8 +1458,6 @@ const styles =
       marginBottom: 8,
 
     },
-
-
 
     searchFinishedText: {
 
@@ -1902,8 +1471,6 @@ const styles =
 
     },
 
-
-
     searchFinishedButton: {
 
       backgroundColor: "#0B6E4F",
@@ -1916,8 +1483,6 @@ const styles =
 
     },
 
-
-
     searchFinishedButtonText: {
 
       color: "#FFFFFF",
@@ -1927,7 +1492,5 @@ const styles =
       fontWeight: "700",
 
     },
-
-
 
   });

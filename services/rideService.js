@@ -58,11 +58,19 @@ export async function createRide({
     // ==================================================
     // 1. CRÉER LA COURSE
     // ==================================================
-const calculatedPrice =
-  calculateFare(
-    Number(distance) || 0,
-    vehicleType
-  );
+const calculatedDistance = Number(distance);
+
+if (
+  !Number.isFinite(calculatedDistance) ||
+  calculatedDistance <= 0
+) {
+  throw new Error("Distance de course invalide.");
+}
+
+const calculatedPrice = calculateFare(
+  calculatedDistance,
+  vehicleType
+);
 
 console.log(
   "💰 TARIF CALCULÉ :",
