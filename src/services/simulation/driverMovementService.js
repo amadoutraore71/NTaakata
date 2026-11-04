@@ -1,413 +1,233 @@
-import {
-  doc,
-  updateDoc,
-} from "firebase/firestore";
-
+import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../../../firebase/config";
 
-
-// ======================================================
-// CONFIGURATION
-// ======================================================
-
-// Nombre d'étapes de déplacement.
-// Le conducteur se déplacera pendant environ 30 secondes.
+// Durée approximative du déplacement : 30 secondes.
 const STEP_COUNT = 30;
-
-// Temps entre deux positions Firestore.
 const STEP_DELAY = 1000;
-// ======================================================
-// CONTRÔLE DES DÉPLACEMENTS ACTIFS
-// ======================================================
 
-// Un seul déplacement à la fois par conducteur.
+// Un seul déplacement actif par conducteur.
 const activeMovements = new Map();
 
 export function stopDriverMovement(driverId) {
-  if (!driverId) {
-    return;
-  }
+  if (driverId === undefined || driverId === null || driverId === "") return;
 
   const key = String(driverId);
-
   if (activeMovements.has(key)) {
     activeMovements.delete(key);
-
-    console.log(
-      "🛑 Déplacement conducteur arrêté :",
-      driverId
-    );
+    console.log("🛑 Déplacement conducteur arrêté :", key);
   }
 }
-
-// ======================================================
-// PAUSE
-// ======================================================
 
 function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeLocation(location, label) {
+  if (!location) {
+    throw new Error(`Position ${label} manquante`);
+  }
 
-// ======================================================
-// DISTANCE ENTRE DEUX COORDONNÉES
-// ======================================================
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
 
-function getDistanceMeters(
-  latitude1,
-  longitude1,
-  latitude2,
-  longitude2
-) {
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error(`Coordonnées invalides pour la position ${label}`);
+  }
+
+  return { latitude, longitude };
+}
+
+function getDistanceMeters(latitude1, longitude1, latitude2, longitude2) {
   const earthRadius = 6371000;
+  const toRadians = (value) => (value * Math.PI) / 180;
 
-  const lat1 =
-    (latitude1 * Math.PI) / 180;
-
-  const lat2 =
-    (latitude2 * Math.PI) / 180;
-
-  const deltaLat =
-    ((latitude2 - latitude1) * Math.PI) /
-    180;
-
-  const deltaLng =
-    ((longitude2 - longitude1) * Math.PI) /
-    180;
+  const lat1 = toRadians(latitude1);
+  const lat2 = toRadians(latitude2);
+  const deltaLat = toRadians(latitude2 - latitude1);
+  const deltaLng = toRadians(longitude2 - longitude1);
 
   const a =
-    Math.sin(deltaLat / 2) *
-      Math.sin(deltaLat / 2) +
+    Math.sin(deltaLat / 2) ** 2 +
     Math.cos(lat1) *
       Math.cos(lat2) *
-      Math.sin(deltaLng / 2) *
-      Math.sin(deltaLng / 2);
+      Math.sin(deltaLng / 2) ** 2;
 
-  const c =
-    2 *
-    Math.atan2(
-      Math.sqrt(a),
-      Math.sqrt(1 - a)
-    );
-
-  return earthRadius * c;
+  // Limiter a à [0, 1] pour éviter les erreurs d'arrondi dans sqrt.
+  const safeA = Math.min(1, Math.max(0, a));
+  return earthRadius * 2 * Math.atan2(Math.sqrt(safeA), Math.sqrt(1 - safeA));
 }
 
+/**
+ * Demande à OSRM la géométrie complète de la route.
+ * OSRM attend les coordonnées dans l'ordre longitude,latitude.
+ */
+async function getRoadRoute(startLocation, endLocation) {
+  const start = normalizeLocation(startLocation, "de départ");
+  const end = normalizeLocation(endLocation, "d'arrivée");
 
-// ======================================================
-// OBTENIR LA ROUTE OSRM
-// ======================================================
+  const straightDistance = getDistanceMeters(
+    start.latitude,
+    start.longitude,
+    end.latitude,
+    end.longitude
+  );
 
-async function getRoadRoute(
-  startLocation,
-  endLocation
-) {
-  const startLatitude =
-    Number(startLocation.latitude);
-
-  const startLongitude =
-    Number(startLocation.longitude);
-
-  const endLatitude =
-    Number(endLocation.latitude);
-
-  const endLongitude =
-    Number(endLocation.longitude);
-
-  if (
-    !Number.isFinite(startLatitude) ||
-    !Number.isFinite(startLongitude) ||
-    !Number.isFinite(endLatitude) ||
-    !Number.isFinite(endLongitude)
-  ) {
+  // Évite une route OSRM de 0 m si le mauvais point d'arrivée est transmis.
+  if (straightDistance < 5) {
     throw new Error(
-      "Coordonnées invalides pour calculer la route"
+      "Le départ et l'arrivée sont distants de moins de 5 m. Vérifie endLocation : il faut transmettre le véritable point d'arrivée."
     );
   }
 
-  // ====================================================
-  // IMPORTANT :
-  // OSRM utilise longitude,latitude
-  // ====================================================
-
+  const coordinates =
+    `${start.longitude},${start.latitude};${end.longitude},${end.latitude}`;
   const url =
-    "https://router.project-osrm.org/route/v1/driving/" +
-    `${startLongitude},${startLatitude};` +
-    `${endLongitude},${endLatitude}` +
-    "?overview=full&geometries=geojson";
+    `https://router.project-osrm.org/route/v1/driving/${coordinates}` +
+    "?overview=full&geometries=geojson&steps=false";
 
-  console.log(
-    "🌍 Calcul de la route OSRM..."
-  );
+  console.log("🌍 Calcul de la route OSRM…");
+  console.log("📍 Départ :", start);
+  console.log("🎯 Arrivée :", end);
 
-  console.log(
-    "📍 Départ :",
-    {
-      latitude: startLatitude,
-      longitude: startLongitude,
-    }
-  );
-
-  console.log(
-    "🎯 Arrivée :",
-    {
-      latitude: endLatitude,
-      longitude: endLongitude,
-    }
-  );
-
-  const response =
-    await fetch(url);
+  const response = await fetch(url);
 
   if (!response.ok) {
+    throw new Error(`OSRM HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (data.code !== "Ok" || !Array.isArray(data.routes) || !data.routes.length) {
+    throw new Error(data.message || "OSRM n'a trouvé aucune route.");
+  }
+
+  const route = data.routes[0];
+  const coordinatesList = route?.geometry?.coordinates;
+
+  if (!Array.isArray(coordinatesList) || coordinatesList.length < 2) {
+    throw new Error("La géométrie de la route OSRM est invalide.");
+  }
+
+  if (!Number.isFinite(route.distance) || route.distance <= 0) {
     throw new Error(
-      `OSRM HTTP ${response.status}`
+      "La distance de la route OSRM est nulle. Vérifie les coordonnées de départ et d'arrivée."
     );
   }
 
-  const data =
-    await response.json();
+  console.log("✅ Route OSRM obtenue");
+  console.log("📏 Distance OSRM :", Math.round(route.distance), "m");
+  console.log("⏱️ Durée OSRM :", Math.round(route.duration), "s");
+  console.log("📍 Nombre de points OSRM :", coordinatesList.length);
 
-  if (
-    !data.routes ||
-    !data.routes.length
-  ) {
-    throw new Error(
-      "OSRM n'a trouvé aucune route"
-    );
-  }
-
-  const route =
-    data.routes[0];
-
-  if (
-    !route.geometry ||
-    !route.geometry.coordinates ||
-    route.geometry.coordinates.length < 2
-  ) {
-    throw new Error(
-      "Géométrie OSRM invalide"
-    );
-  }
-
-  console.log(
-    "✅ Route OSRM obtenue"
-  );
-
-  console.log(
-    "📏 Distance route :",
-    route.distance,
-    "m"
-  );
-
-  console.log(
-    "⏱️ Durée route :",
-    route.duration,
-    "s"
-  );
-
-  console.log(
-    "📍 Nombre de points OSRM :",
-    route.geometry.coordinates.length
-  );
-console.log(
-  "🧪 COORDONNÉES OSRM :",
-  route.geometry.coordinates
-);
-
-console.log(
-  "🧪 DISTANCE OSRM BRUTE :",
-  route.distance
-);
   return route;
 }
 
-
-// ======================================================
-// CRÉER DES ÉTAPES À PARTIR DE LA ROUTE
-// ======================================================
-//
-// Au lieu de prendre directement 30 points arbitraires,
-// on répartit les 30 étapes sur toute la longueur de
-// la route.
-//
-// Les points restent donc TOUJOURS sur la route OSRM.
-// ======================================================
-
-function createRouteSteps(
-  coordinates,
-  stepCount
-) {
-  if (
-    !coordinates ||
-    coordinates.length < 2
-  ) {
-    throw new Error(
-      "Pas assez de points pour construire le déplacement"
-    );
+/**
+ * Répartit les étapes le long de la géométrie OSRM.
+ * Les points sont interpolés uniquement entre deux points voisins de la route,
+ * et non directement entre le départ et l'arrivée.
+ */
+function createRouteSteps(coordinates, stepCount) {
+  if (!Array.isArray(coordinates) || coordinates.length < 2) {
+    throw new Error("Pas assez de points pour construire le déplacement.");
   }
 
-  // ====================================================
-  // 1. CONVERSION DES POINTS
-  // ====================================================
+  const points = coordinates.map((coordinate, index) => {
+    if (!Array.isArray(coordinate) || coordinate.length < 2) {
+      throw new Error(`Coordonnée OSRM invalide à l'index ${index}.`);
+    }
 
-  const points =
-    coordinates.map(
-      (coordinate) => ({
-        latitude:
-          Number(coordinate[1]),
+    // GeoJSON / OSRM : [longitude, latitude].
+    const longitude = Number(coordinate[0]);
+    const latitude = Number(coordinate[1]);
 
-        longitude:
-          Number(coordinate[0]),
-      })
-    );
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new Error(`Coordonnées OSRM hors limites à l'index ${index}.`);
+    }
 
-  // ====================================================
-  // 2. CALCUL DES DISTANCES CUMULÉES
-  // ====================================================
+    return { latitude, longitude };
+  });
 
-  const cumulativeDistances =
-    [0];
-
+  const cumulativeDistances = [0];
   let totalDistance = 0;
 
-  for (
-    let i = 1;
-    i < points.length;
-    i++
-  ) {
-    const previous =
-      points[i - 1];
+  for (let i = 1; i < points.length; i += 1) {
+    const previous = points[i - 1];
+    const current = points[i];
 
-    const current =
-      points[i];
-
-    const segmentDistance =
-      getDistanceMeters(
-        previous.latitude,
-        previous.longitude,
-        current.latitude,
-        current.longitude
-      );
-
-    totalDistance +=
-      segmentDistance;
-
-    cumulativeDistances.push(
-      totalDistance
+    totalDistance += getDistanceMeters(
+      previous.latitude,
+      previous.longitude,
+      current.latitude,
+      current.longitude
     );
+
+    cumulativeDistances.push(totalDistance);
   }
 
-  if (
-    totalDistance <= 0
-  ) {
-    throw new Error(
-      "La distance de la route est nulle"
-    );
+  if (totalDistance < 1) {
+    throw new Error("La distance de la géométrie OSRM est nulle.");
   }
-
-  // ====================================================
-  // 3. CRÉATION DES ÉTAPES
-  // ====================================================
 
   const steps = [];
+  let segmentIndex = 1;
 
-  for (
-    let step = 1;
-    step <= stepCount;
-    step++
-  ) {
-    const targetDistance =
-      (totalDistance * step) /
-      stepCount;
+  for (let step = 1; step <= stepCount; step += 1) {
+    // La dernière étape reprend exactement le dernier point de la route.
+    if (step === stepCount) {
+      steps.push({ ...points[points.length - 1] });
+      continue;
+    }
 
-    // -----------------------------------------------
-    // Trouver le segment contenant cette distance
-    // -----------------------------------------------
-
-    let segmentIndex = 1;
+    const targetDistance = (totalDistance * step) / stepCount;
 
     while (
-      segmentIndex <
-        cumulativeDistances.length &&
-      cumulativeDistances[
-        segmentIndex
-      ] < targetDistance
+      segmentIndex < cumulativeDistances.length - 1 &&
+      cumulativeDistances[segmentIndex] < targetDistance
     ) {
-      segmentIndex++;
+      segmentIndex += 1;
     }
 
-    if (
-      segmentIndex >=
-      cumulativeDistances.length
-    ) {
-      segmentIndex =
-        cumulativeDistances.length - 1;
-    }
-
-    const previousPoint =
-      points[segmentIndex - 1];
-
-    const nextPoint =
-      points[segmentIndex];
-
-    const previousDistance =
-      cumulativeDistances[
-        segmentIndex - 1
-      ];
-
+    const previousPoint = points[segmentIndex - 1];
+    const nextPoint = points[segmentIndex];
+    const previousDistance = cumulativeDistances[segmentIndex - 1];
     const segmentDistance =
-      cumulativeDistances[
-        segmentIndex
-      ] -
-      previousDistance;
+      cumulativeDistances[segmentIndex] - previousDistance;
 
-    let ratio = 0;
-
-    if (
+    const ratio =
       segmentDistance > 0
-    ) {
-      ratio =
-        (targetDistance -
-          previousDistance) /
-        segmentDistance;
-    }
-
-    // -----------------------------------------------
-    // Position interpolée SUR LE SEGMENT DE ROUTE
-    // -----------------------------------------------
-
-    const latitude =
-      previousPoint.latitude +
-      (nextPoint.latitude -
-        previousPoint.latitude) *
-        ratio;
-
-    const longitude =
-      previousPoint.longitude +
-      (nextPoint.longitude -
-        previousPoint.longitude) *
-        ratio;
+        ? Math.min(
+            1,
+            Math.max(0, (targetDistance - previousDistance) / segmentDistance)
+          )
+        : 0;
 
     steps.push({
-      latitude,
-      longitude,
+      latitude:
+        previousPoint.latitude +
+        (nextPoint.latitude - previousPoint.latitude) * ratio,
+      longitude:
+        previousPoint.longitude +
+        (nextPoint.longitude - previousPoint.longitude) * ratio,
     });
   }
 
-  return {
-    steps,
-    totalDistance,
-  };
+  return { steps, totalDistance };
 }
-
-
-// ======================================================
-// DÉPLACEMENT DU CONDUCTEUR
-// ======================================================
-
 
 export async function startDriverMovement({
   driverId,
@@ -415,248 +235,72 @@ export async function startDriverMovement({
   endLocation,
   onFinished,
 }) {
+  if (driverId === undefined || driverId === null || driverId === "") {
+    throw new Error("driverId manquant.");
+  }
+
+  const start = normalizeLocation(startLocation, "de départ du conducteur");
+  const end = normalizeLocation(endLocation, "d'arrivée");
+
   console.log("========================================");
   console.log("🚗 START DRIVER MOVEMENT");
   console.log("🆔 driverId =", driverId);
-  console.log("📍 startLocation =", startLocation);
-  console.log("🎯 endLocation =", endLocation);
+  console.log("📍 startLocation =", start);
+  console.log("🎯 endLocation =", end);
   console.log("========================================");
 
-  // ====================================================
-  // VALIDATION ID
-  // ====================================================
+  const key = String(driverId);
+  const movementToken = Symbol(`driver_${key}`);
 
-  if (!driverId) {
-    throw new Error("driverId manquant");
+  if (activeMovements.has(key)) {
+    console.log("🛑 Remplacement de l'ancien déplacement :", key);
   }
 
-  // ====================================================
-  // VALIDATION DÉPART
-  // ====================================================
+  activeMovements.set(key, movementToken);
 
-  if (
-    !startLocation ||
-    typeof startLocation.latitude !== "number" ||
-    typeof startLocation.longitude !== "number"
-  ) {
-    throw new Error(
-      "Position de départ du conducteur invalide",
-    );
-  }
-
-  // ====================================================
-  // VALIDATION ARRIVÉE
-  // ====================================================
-
-  if (
-    !endLocation ||
-    typeof endLocation.latitude !== "number" ||
-    typeof endLocation.longitude !== "number"
-  ) {
-    throw new Error(
-      "Position d'arrivée invalide",
-    );
-  }
-
-  // ====================================================
-  // ANNULER L'ANCIEN DÉPLACEMENT
-  // ====================================================
-
-  const movementToken = Symbol(`driver_${driverId}`);
-
-  const previousMovement = activeMovements.get(
-    String(driverId),
-  );
-
-  if (previousMovement) {
-    console.log(
-      "🛑 Ancien déplacement annulé pour le conducteur :",
-      driverId,
-    );
-  }
-
-  activeMovements.set(
-    String(driverId),
-    movementToken,
-  );
-
-  // Fonction locale permettant de savoir si
-  // ce déplacement est toujours le déplacement actif.
-  const isMovementActive = () => {
-    return (
-      activeMovements.get(String(driverId)) ===
-      movementToken
-    );
-  };
-
-  // ====================================================
-  // DOCUMENT FIRESTORE
-  // ====================================================
-
-  const driverRef = doc(
-    db,
-    "users",
-    String(driverId),
-  );
-
-  console.log(
-    "🔥 Document conducteur :",
-    `users/${driverId}`,
-  );
-
-  // ====================================================
-  // CALCUL DE LA ROUTE
-  // ====================================================
-
-  let route;
+  const isMovementActive = () => activeMovements.get(key) === movementToken;
+  const driverRef = doc(db, "users", key);
 
   try {
-    route = await getRoadRoute(
-      startLocation,
-      endLocation,
-    );
-  } catch (error) {
-    // Ne pas laisser un ancien mouvement
-    // reprendre le contrôle.
-    if (isMovementActive()) {
-      activeMovements.delete(String(driverId));
-    }
+    const route = await getRoadRoute(start, end);
 
-    console.error(
-      "❌ Impossible de calculer la route OSRM :",
-      error,
-    );
-
-    throw error;
-  }
-
-  // ====================================================
-  // VÉRIFIER APRÈS OSRM
-  // ====================================================
-
-  if (!isMovementActive()) {
-    console.log(
-      "🛑 Déplacement remplacé pendant le calcul OSRM.",
-    );
-
-    return;
-  }
-
-  // ====================================================
-  // CONSTRUIRE LES ÉTAPES
-  // ====================================================
-
-  let routeSteps;
-
-  try {
-    const result = createRouteSteps(
-      route.geometry.coordinates,
-      STEP_COUNT,
-    );
-
-    routeSteps = result.steps;
-
-    console.log(
-      "🛣️ Étapes de déplacement créées :",
-      routeSteps.length,
-    );
-
-    console.log(
-      "📏 Distance totale :",
-      result.totalDistance,
-      "m",
-    );
-  } catch (error) {
-    if (isMovementActive()) {
-      activeMovements.delete(String(driverId));
-    }
-
-    console.error(
-      "❌ Impossible de construire les étapes :",
-      error,
-    );
-
-    throw error;
-  }
-
-  // ====================================================
-  // POSITION INITIALE
-  // ====================================================
-
-  if (!isMovementActive()) {
-    console.log(
-      "🛑 Déplacement remplacé avant la position initiale.",
-    );
-
-    return;
-  }
-
-  try {
-    await updateDoc(driverRef, {
-      latitude: startLocation.latitude,
-      longitude: startLocation.longitude,
-      lastLocationUpdate: new Date(),
-    });
-
-    console.log(
-      "📍 Position initiale enregistrée",
-    );
-  } catch (error) {
-    if (isMovementActive()) {
-      activeMovements.delete(String(driverId));
-    }
-
-    console.error(
-      "❌ Impossible de mettre à jour la position initiale :",
-      error,
-    );
-
-    throw error;
-  }
-
-  // ====================================================
-  // DÉPLACEMENT SUR LA ROUTE
-  // ====================================================
-
-  for (
-    let step = 0;
-    step < routeSteps.length;
-    step++
-  ) {
-    // --------------------------------------------------
-    // VÉRIFIER AVANT CHAQUE ÉTAPE
-    // --------------------------------------------------
-
+    // Un nouveau déplacement a pu être lancé pendant la requête OSRM.
     if (!isMovementActive()) {
-      console.log(
-        "🛑 Déplacement interrompu : un nouveau déplacement est actif.",
-      );
-
+      console.log("🛑 Calcul OSRM ignoré : un déplacement plus récent est actif.");
       return;
     }
 
-    const position = routeSteps[step];
-
-    console.log(
-      `🚗 Déplacement ${step + 1}/${routeSteps.length}`,
-      {
-        latitude: position.latitude,
-        longitude: position.longitude,
-      },
+    const { steps, totalDistance } = createRouteSteps(
+      route.geometry.coordinates,
+      STEP_COUNT
     );
 
-    try {
-      // ------------------------------------------------
-      // VÉRIFIER JUSTE AVANT FIRESTORE
-      // ------------------------------------------------
+    console.log("🛣️ Étapes créées :", steps.length);
+    console.log("📏 Distance géométrique :", Math.round(totalDistance), "m");
 
+    // Publier la position de départ avant les étapes.
+    await updateDoc(driverRef, {
+      latitude: start.latitude,
+      longitude: start.longitude,
+      lastLocationUpdate: new Date(),
+    });
+
+    for (let index = 0; index < steps.length; index += 1) {
       if (!isMovementActive()) {
-        console.log(
-          "🛑 Déplacement annulé avant écriture Firestore.",
-        );
-
+        console.log("🛑 Déplacement annulé avant l'étape", index + 1);
         return;
       }
+
+      // Garder une cadence régulière et permettre à l'application d'afficher
+      // chaque nouvelle position depuis Firestore.
+      await sleep(STEP_DELAY);
+
+      if (!isMovementActive()) {
+        console.log("🛑 Déplacement annulé pendant l'attente.");
+        return;
+      }
+
+      const position = steps[index];
 
       await updateDoc(driverRef, {
         latitude: position.latitude,
@@ -664,100 +308,35 @@ export async function startDriverMovement({
         lastLocationUpdate: new Date(),
       });
 
-      // stopDriverMovement peut être appelé pendant l'écriture Firestore.
-      // Dans ce cas, ne pas continuer l'ancien trajet ni lancer onFinished.
       if (!isMovementActive()) {
-        console.log(
-          "🛑 Mouvement arrêté pendant l'écriture Firestore ; arrêt immédiat.",
-        );
+        console.log("🛑 Déplacement remplacé pendant l'écriture Firestore.");
         return;
       }
 
       console.log(
-        "🔥 Firestore mis à jour :",
-        position,
+        `🚗 Déplacement ${index + 1}/${steps.length}`,
+        position
       );
-    } catch (error) {
-      if (isMovementActive()) {
-        activeMovements.delete(String(driverId));
-      }
-
-      console.error(
-        "❌ Erreur mise à jour position conducteur :",
-        error,
-      );
-
-      throw error;
     }
 
-    // ==================================================
-    // ARRIVÉE
-    // ==================================================
+    if (!isMovementActive()) return;
 
-    if (
-      step ===
-      routeSteps.length - 1
-    ) {
-      // ------------------------------------------------
-      // VÉRIFIER AVANT onFinished
-      // ------------------------------------------------
+    // Retirer le mouvement actif avant d'appeler le callback.
+    activeMovements.delete(key);
 
-      if (!isMovementActive()) {
-        console.log(
-          "🛑 Déplacement remplacé juste avant l'arrivée.",
-        );
+    console.log("========================================");
+    console.log("📍 CONDUCTEUR ARRIVÉ :", steps[steps.length - 1]);
+    console.log("========================================");
 
-        return;
-      }
-
-      console.log(
-        "========================================",
-      );
-
-      console.log(
-        "📍 CONDUCTEUR ARRIVÉ",
-      );
-
-      console.log(
-        "📍 Position finale :",
-        position,
-      );
-
-      console.log(
-        "========================================",
-      );
-
-      // Le mouvement est terminé.
-      activeMovements.delete(
-        String(driverId),
-      );
-
-      if (
-        typeof onFinished ===
-        "function"
-      ) {
-        await onFinished();
-      }
-
-      return;
+    if (typeof onFinished === "function") {
+      await onFinished();
+    }
+  } catch (error) {
+    if (isMovementActive()) {
+      activeMovements.delete(key);
     }
 
-    // ==================================================
-    // ATTENTE AVANT LA PROCHAINE POSITION
-    // ==================================================
-
-    await sleep(STEP_DELAY);
-
-    // --------------------------------------------------
-    // VÉRIFICATION APRÈS L'ATTENTE
-    // --------------------------------------------------
-
-    if (!isMovementActive()) {
-      console.log(
-        "🛑 Déplacement annulé après attente.",
-      );
-
-      return;
-    }
+    console.error("❌ Erreur déplacement conducteur :", error);
+    throw error;
   }
 }

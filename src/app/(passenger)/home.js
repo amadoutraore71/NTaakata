@@ -24,7 +24,6 @@ export default function PassengerHome() {
     pickup,
     currentLocation,
     loadingLocation,
-    stopLocation,
   } = usePassengerLocation();
 
   const [estimatedDistance, setEstimatedDistance] = useState(0);
@@ -32,21 +31,33 @@ export default function PassengerHome() {
   const [destination, setDestination] = useState(null);
   const [vehicleType, setVehicleType] = useState("moto");
   const [calculatingRoute, setCalculatingRoute] = useState(false);
+  const [estimatedDuration, setEstimatedDuration] = useState(0);
+  const [loadingUser, setLoadingUser] = useState(true);
 
-  const { requestRide } = useRideRequest();
+  const {
+    requestRide,
+    requestingRide,
+  } = useRideRequest();
 
   const routeRequestId = useRef(0);
   const lastRouteKey = useRef(null);
+  const mountedRef = useRef(true);
 
   // Charger l'utilisateur et vérifier une course active.
   useEffect(() => {
+    mountedRef.current = true;
     let mounted = true;
 
     async function loadUser() {
       try {
         const currentUser = await getUser();
 
-        if (!mounted || !currentUser) return;
+        if (!mounted || !currentUser?.userId) {
+          if (mounted && !currentUser?.userId) {
+            router.replace("/(auth)/login");
+          }
+          return;
+        }
 
         setUser(currentUser);
 
@@ -54,7 +65,7 @@ export default function PassengerHome() {
 
         if (!mounted) return;
 
-        if (activeRide) {
+        if (activeRide?.id) {
           router.replace({
             pathname: "/(passenger)/RideStatus",
             params: { rideId: activeRide.id },
@@ -62,6 +73,10 @@ export default function PassengerHome() {
         }
       } catch (error) {
         console.log("Erreur chargement utilisateur :", error);
+      } finally {
+        if (mounted) {
+          setLoadingUser(false);
+        }
       }
     }
 
@@ -69,11 +84,12 @@ export default function PassengerHome() {
 
     return () => {
       mounted = false;
+      mountedRef.current = false;
+      routeRequestId.current += 1;
     };
   }, []);
 
-  // Calculer l'itinéraire en arrière-plan.
-  // Aucun message de chargement n'est affiché au passager.
+  // Calculer l'itinéraire sans modifier l'interface.
   useEffect(() => {
     if (!destination) return;
 
@@ -89,12 +105,15 @@ export default function PassengerHome() {
       return;
     }
 
+    // La clé comprend le départ et l'arrivée.
+    // Un changement réel de position peut donc recalculer l'itinéraire.
     const routeKey = [
+      coords.latitude.toFixed(5),
+      coords.longitude.toFixed(5),
       destination.latitude,
       destination.longitude,
     ].join(",");
 
-    // Ne pas recalculer à chaque actualisation du GPS.
     if (lastRouteKey.current === routeKey) return;
 
     lastRouteKey.current = routeKey;
@@ -117,26 +136,51 @@ export default function PassengerHome() {
           }
         );
 
-        if (cancelled || requestId !== routeRequestId.current) return;
+        if (
+          cancelled ||
+          !mountedRef.current ||
+          requestId !== routeRequestId.current
+        ) {
+          return;
+        }
 
-        if (!route || typeof route.distance !== "number") {
+        const distance = Number(route?.distance);
+        const duration = Number(route?.duration);
+
+        if (!Number.isFinite(distance) || distance <= 0) {
           setEstimatedDistance(0);
+          setEstimatedDuration(0);
           lastRouteKey.current = null;
           return;
         }
 
-        // La distance est déjà en kilomètres.
-        setEstimatedDistance(route.distance);
+        setEstimatedDistance(distance);
+        setEstimatedDuration(
+          Number.isFinite(duration) && duration >= 0
+            ? duration
+            : 0
+        );
 
-        console.log("Distance calculée :", route.distance, "km");
+        console.log("Distance calculée :", distance, "km");
+        console.log("Durée calculée :", duration, "minutes");
       } catch (error) {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          mountedRef.current &&
+          requestId === routeRequestId.current
+        ) {
           setEstimatedDistance(0);
+          setEstimatedDuration(0);
           lastRouteKey.current = null;
+
           console.log("Erreur calcul itinéraire :", error);
         }
       } finally {
-        if (!cancelled && requestId === routeRequestId.current) {
+        if (
+          !cancelled &&
+          mountedRef.current &&
+          requestId === routeRequestId.current
+        ) {
           setCalculatingRoute(false);
         }
       }
@@ -157,43 +201,84 @@ export default function PassengerHome() {
   const handleDestinationSelect = useCallback((place) => {
     if (!place) return;
 
-    console.log("Destination sélectionnée :", place);
+    const latitude = Number(place.latitude);
+    const longitude = Number(place.longitude);
 
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude)
+    ) {
+      console.log("Destination invalide :", place);
+      return;
+    }
+
+    const selectedPlace = {
+      ...place,
+      latitude,
+      longitude,
+    };
+
+    console.log("Destination sélectionnée :", selectedPlace);
+
+    // Invalider tout calcul précédent.
     routeRequestId.current += 1;
     lastRouteKey.current = null;
 
     setCalculatingRoute(false);
     setEstimatedDistance(0);
-    setDestination(place);
+    setEstimatedDuration(0);
+    setDestination(selectedPlace);
   }, []);
 
-  // Commander uniquement lorsque les informations sont prêtes.
-  const handleRideRequest = () => {
-    if (!user || !destination || !currentLocation?.coords) {
-      console.log("Informations de course incomplètes.");
+  // Envoyer la demande au hook corrigé.
+  const handleRideRequest = useCallback(async () => {
+    if (requestingRide) return;
+
+    if (!user?.userId) {
+      console.log("Demande impossible : utilisateur non chargé.");
+      return;
+    }
+
+    if (!destination || !currentLocation?.coords) {
+      console.log("Demande impossible : destination ou GPS manquant.");
       return;
     }
 
     if (calculatingRoute || estimatedDistance <= 0) {
+      console.log("Demande impossible : itinéraire non prêt.");
       return;
     }
 
-    requestRide({
+    await requestRide({
       user,
       pickup,
       destination,
       currentLocation,
       vehicleType,
-      stopLocation,
+      distance: estimatedDistance,
+      duration: estimatedDuration,
     });
-  };
+  }, [
+    requestingRide,
+    user,
+    destination,
+    currentLocation,
+    calculatingRoute,
+    estimatedDistance,
+    estimatedDuration,
+    pickup,
+    vehicleType,
+    requestRide,
+  ]);
 
   const canRequestRide =
-    Boolean(user) &&
+    Boolean(user?.userId) &&
     Boolean(destination) &&
     Boolean(currentLocation?.coords) &&
     !loadingLocation &&
+    !loadingUser &&
     !calculatingRoute &&
+    !requestingRide &&
     estimatedDistance > 0;
 
   return (
@@ -238,7 +323,11 @@ export default function PassengerHome() {
 
           <View style={styles.commandSection}>
             <PrimaryButton
-              title="Commander"
+              title={
+                requestingRide
+                  ? "Envoi en cours..."
+                  : "Commander"
+              }
               onPress={handleRideRequest}
               disabled={!canRequestRide}
             />

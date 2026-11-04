@@ -413,16 +413,29 @@ export default function RateDriver() {
         // MARQUER LA COURSE COMME NOTÉE
         // ===============================================
 
-        await updateDoc(
-          rideRef,
-          {
-            rating:
-              selectedRating,
+        // ===============================================
+// MARQUER LA COURSE COMME NOTÉE ET PAYÉE
+// ===============================================
 
-            ratingSubmitted:
-              true,
-          }
-        );
+const paidAmount = Number(ride.estimatedPrice);
+
+if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+  Alert.alert(
+    "Erreur",
+    "Le montant de cette course est invalide. Le paiement n'a pas été enregistré."
+  );
+  return;
+}
+
+await updateDoc(rideRef, {
+  rating: selectedRating,
+  ratingSubmitted: true,
+
+  // La notation confirme le paiement selon
+  // la règle de fonctionnement de N'Taakata.
+  paymentStatus: "paid",
+  paidAmount: paidAmount,
+});
 
         // ===============================================
         // METTRE À JOUR LE CONDUCTEUR

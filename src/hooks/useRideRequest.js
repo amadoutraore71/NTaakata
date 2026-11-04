@@ -1,195 +1,157 @@
-import { router } from "expo-router";
+
+import { useCallback, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { router } from "expo-router";
 
-import { calculateFare } from "../utils/fareCalculator";
-import { calculateRoute } from "../utils/routeCalculator";
-
-import { findAvailableDrivers } from "../../services/matching/driverSelectionService";
 import { createRide } from "../../services/rideService";
 
 export default function useRideRequest() {
+  const [requestingRide, setRequestingRide] = useState(false);
+  const requestInProgress = useRef(false);
 
-  async function requestRide({
+  const requestRide = useCallback(async ({
     user,
     pickup,
     destination,
     currentLocation,
     vehicleType,
-    stopLocation,
-  }) {
+    distance,
+    duration,
+  } = {}) => {
+    // Éviter les doubles demandes.
+    if (requestInProgress.current) {
+      return;
+    }
+
+    const coords = currentLocation?.coords;
+
+    // Vérifier les informations du passager.
+    if (!user?.userId) {
+      Alert.alert(
+        "Compte introuvable",
+        "Reconnectez-vous avant de commander une course."
+      );
+      return;
+    }
+
+    // Vérifier la position GPS.
+    if (
+      !coords ||
+      !Number.isFinite(coords.latitude) ||
+      !Number.isFinite(coords.longitude)
+    ) {
+      Alert.alert(
+        "Position indisponible",
+        "Attendez que votre position GPS soit disponible."
+      );
+      return;
+    }
+
+    // Vérifier la destination.
+    if (
+      !destination ||
+      !Number.isFinite(Number(destination.latitude)) ||
+      !Number.isFinite(Number(destination.longitude))
+    ) {
+      Alert.alert(
+        "Destination manquante",
+        "Sélectionnez une destination valide."
+      );
+      return;
+    }
+
+    // Vérifier la distance calculée en kilomètres.
+    const calculatedDistance = Number(distance);
+
+    if (
+      !Number.isFinite(calculatedDistance) ||
+      calculatedDistance <= 0
+    ) {
+      Alert.alert(
+        "Itinéraire indisponible",
+        "Attendez la fin du calcul de la distance avant de commander."
+      );
+      return;
+    }
+
+    if (!["moto", "voiture"].includes(vehicleType)) {
+      Alert.alert(
+        "Véhicule invalide",
+        "Sélectionnez une moto ou une voiture."
+      );
+      return;
+    }
+
+    requestInProgress.current = true;
+    setRequestingRide(true);
 
     try {
+      const pickupData = {
+        address:
+          typeof pickup === "string"
+            ? pickup
+            : pickup?.address || "Ma position actuelle",
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      };
 
-      if (!destination) {
-        Alert.alert(
-          "Destination",
-          "Veuillez choisir une destination."
-        );
-        return;
-      }
+      const destinationData = {
+        ...destination,
+        latitude: Number(destination.latitude),
+        longitude: Number(destination.longitude),
+      };
 
-      if (!currentLocation) {
-        Alert.alert(
-          "Patientez",
-          "Position GPS indisponible."
-        );
-        return;
-      }
+      const calculatedDuration = Number(duration);
 
-      const route = await calculateRoute(
-        {
-          latitude: currentLocation.coords.latitude,
-          longitude: currentLocation.coords.longitude,
-        },
-        {
-          latitude: destination.latitude,
-          longitude: destination.longitude,
-        }
-      );
+      console.log("🚕 Création de la demande de course...");
+      console.log("📍 Départ :", pickupData);
+      console.log("🎯 Destination :", destinationData);
+      console.log("🚘 Véhicule :", vehicleType);
+      console.log("📏 Distance :", calculatedDistance, "km");
 
-      if (!route) return;
-
-      
-const distance = route.distance;
-
-const price = calculateFare(
-  distance,
-  vehicleType
-);
-
-const duration = Math.round(
-  (distance / 40) * 60
-);
-
-
-      const drivers =
-        await findAvailableDrivers(
-          {
-            latitude:
-              currentLocation.coords.latitude,
-            longitude:
-              currentLocation.coords.longitude,
-          },
-          vehicleType
-        );
-
-      if (drivers.length === 0) {
-
-        Alert.alert(
-          "Aucun conducteur",
-          "Aucun conducteur disponible."
-        );
-
-        return;
-      }
-      const nearestDriver = drivers[0];
-
-console.log("========== MATCHING ==========");
-console.log("Conducteurs disponibles :", drivers.length);
-console.log("Conducteur choisi :", nearestDriver.name);
-console.log("Distance :", nearestDriver.distance, "m");
-console.log("==============================");
-console.log("========== POSITION COURSE ==========");
-
-console.log(
-  "📍 currentLocation :",
-  JSON.stringify(currentLocation, null, 2)
-);
-
-console.log(
-  "📍 PICKUP envoyé :",
-  JSON.stringify({
-    latitude: currentLocation.coords.latitude,
-    longitude: currentLocation.coords.longitude,
-    address: pickup,
-  }, null, 2)
-);
-
-console.log(
-  "🚕 DRIVER choisi :",
-  JSON.stringify({
-    id: nearestDriver.id,
-    name: nearestDriver.name,
-    latitude: nearestDriver.latitude,
-    longitude: nearestDriver.longitude,
-  }, null, 2)
-);
-
-console.log("======================================");
-      stopLocation();
-
+      // createRide calcule le tarif et déclenche
+      // le mécanisme de recherche des conducteurs.
       const rideId = await createRide({
-
         passenger: user,
-
-        driver: nearestDriver,
-
-        pickup: {
-
-          latitude:
-            currentLocation.coords.latitude,
-
-          longitude:
-            currentLocation.coords.longitude,
-
-          address: pickup,
-
-        },
-
-        destination: {
-
-          latitude:
-            destination.latitude,
-
-          longitude:
-            destination.longitude,
-
-          address:
-            destination.address,
-
-        },
-
-        distance,
-
-        duration,
-
-        price,
+        pickup: pickupData,
+        destination: destinationData,
+        distance: calculatedDistance,
+        duration:
+          Number.isFinite(calculatedDuration) &&
+          calculatedDuration >= 0
+            ? calculatedDuration
+            : 0,
         vehicleType,
-
       });
 
-      router.push({
+      if (typeof rideId !== "string" || !rideId.trim()) {
+        throw new Error(
+          "La création de la course n'a pas retourné d'identifiant valide."
+        );
+      }
 
-        pathname:
-          "/(passenger)/RideStatus",
+      console.log("✅ Course créée :", rideId);
 
-        params: {
-
-          rideId,
-
-        },
-
+      router.replace({
+        pathname: "/(passenger)/RideStatus",
+        params: { rideId },
       });
-
-    }
-
-    catch (error) {
-
-      console.log(error);
+    } catch (error) {
+      console.error("❌ Erreur de demande de course :", error);
 
       Alert.alert(
-        "Erreur",
-        "Impossible de créer la course."
+        "Demande impossible",
+        error?.message ||
+          "Une erreur est survenue pendant la création de la course."
       );
-
+    } finally {
+      requestInProgress.current = false;
+      setRequestingRide(false);
     }
-
-  }
+  }, []);
 
   return {
-
     requestRide,
-
+    requestingRide,
   };
-
 }

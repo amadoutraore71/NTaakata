@@ -50,6 +50,26 @@ import {
 
 } from "../../../src/services/simulation/driverMovementService";
 
+const ARRIVAL_RADIUS_METERS = 100;
+
+function calculateDistanceMeters(from, to) {
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const earthRadius = 6371000;
+
+  const latitude1 = toRadians(from.latitude);
+  const latitude2 = toRadians(to.latitude);
+  const latitudeDelta = toRadians(to.latitude - from.latitude);
+  const longitudeDelta = toRadians(to.longitude - from.longitude);
+
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitude1) *
+      Math.cos(latitude2) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function RideStatus() {
 
   const router = useRouter();
@@ -474,9 +494,54 @@ export default function RideStatus() {
                   throw new Error("Cette course n'est pas affectée au conducteur connecté.");
                 }
 
+                // Vérifier que le conducteur est à 100 mètres maximum
+                // de la destination enregistrée pour cette course.
+                const destination = latestRide.destination;
+                const currentDriverLocation = {
+                  latitude: Number(latestDriver.latitude),
+                  longitude: Number(latestDriver.longitude),
+                };
+
+                if (
+                  !destination ||
+                  !Number.isFinite(Number(destination.latitude)) ||
+                  !Number.isFinite(Number(destination.longitude))
+                ) {
+                  throw new Error("La destination de cette course est invalide. Impossible de vérifier l'arrivée.");
+                }
+
+                if (
+                  !Number.isFinite(currentDriverLocation.latitude) ||
+                  !Number.isFinite(currentDriverLocation.longitude)
+                ) {
+                  throw new Error("Position GPS du conducteur indisponible. Réessaie lorsque ta position sera actualisée.");
+                }
+
+                const distanceToDestination = calculateDistanceMeters(
+                  currentDriverLocation,
+                  {
+                    latitude: Number(destination.latitude),
+                    longitude: Number(destination.longitude),
+                  }
+                );
+
+                if (distanceToDestination > ARRIVAL_RADIUS_METERS) {
+                  throw new Error(
+                    `Tu es encore à environ ${Math.round(distanceToDestination)} m de la destination. ` +
+                    `Tu dois être à ${ARRIVAL_RADIUS_METERS} m maximum pour terminer normalement la course.`
+                  );
+                }
+
+                const paidAmount = Number(latestRide.estimatedPrice);
+                if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+                  throw new Error("Le prix de la course est invalide. Le paiement ne peut pas être enregistré.");
+                }
+
                 transaction.update(rideRef, {
                   status: "completed",
                   completedAt: serverTimestamp(),
+                  paymentStatus: "paid",
+                  paidAmount,
                 });
 
                 // Ne libère le conducteur que si cette course est bien son affectation actuelle.
